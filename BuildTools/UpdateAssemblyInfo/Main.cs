@@ -22,19 +22,11 @@ namespace UpdateAssemblyInfo
 		const string BaseCommit = "d779383cb85003d6dabeb976f0845631e07bf463";
 		const int BaseCommitRev = 1;
 		
-		const string globalAssemblyInfoTemplateFile = "ILSpy/Properties/AssemblyInfo.template.cs";
+		const string globalAssemblyInfoTemplateFile = "ICSharpCode.Decompiler/Properties/AssemblyInfo.template.cs";
 		static readonly TemplateFile[] templateFiles = {
 			new TemplateFile {
 				Input = globalAssemblyInfoTemplateFile,
-				Output = "ILSpy/Properties/AssemblyInfo.cs"
-			},
-			new TemplateFile {
-				Input = "ICSharpCode.Decompiler/Properties/AssemblyInfo.template.cs",
 				Output = "ICSharpCode.Decompiler/Properties/AssemblyInfo.cs"
-			},
-			new TemplateFile {
-				Input = "ILSpy/Properties/app.config.template",
-				Output = "ILSpy/app.config"
 			}
 		};
 		
@@ -194,7 +186,7 @@ namespace UpdateAssemblyInfo
 		static void RetrieveRevisionNumber()
 		{
 			if (revisionNumber == null) {
-				if (Directory.Exists(".git")) {
+				if (Directory.Exists(".git") || File.Exists(".git")) {
 					try {
 						ReadRevisionNumberFromGit();
 						ReadBranchNameFromGit();
