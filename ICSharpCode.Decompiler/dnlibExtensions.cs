@@ -189,7 +189,7 @@ namespace ICSharpCode.Decompiler
 					if (ca.Constructor.DeclaringType.Name == "DefaultMemberAttribute" && ca.Constructor.DeclaringType.Namespace == "System.Reflection"
 						&& ca.Constructor.FullName == @"System.Void System.Reflection.DefaultMemberAttribute::.ctor(System.String)") {
 						defaultMemberAttribute = ca;
-						return ca.ConstructorArguments[0].Value as string;
+						return ca.ConstructorArguments[0].Value as UTF8String;
 					}
 			defaultMemberAttribute = null;
 			return null;

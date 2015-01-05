@@ -340,9 +340,9 @@ namespace ICSharpCode.Decompiler.Disassembler
 			output.Write(' ');
 			output.Write(DisassemblerHelpers.Escape(na.Name));
 			output.Write(" = ");
-			if (na.Argument.Value is string) {
+			if (na.Argument.Value is UTF8String) {
 				// secdecls use special syntax for strings
-				output.Write("string('{0}')", NRefactory.CSharp.CSharpOutputVisitor.ConvertString((string)na.Argument.Value).Replace("'", "\'"));
+				output.Write("string('{0}')", NRefactory.CSharp.CSharpOutputVisitor.ConvertString((UTF8String)na.Argument.Value).Replace("'", "\'"));
 			} else {
 				WriteConstant(na.Argument.Value);
 			}
@@ -608,7 +608,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			output.Write(".param [{0}]", p.Index + 1);
 			if (p.ParamDef.HasConstant) {
 				output.Write(" = ");
-				WriteConstant(p.ParamDef.Constant);
+				WriteConstant(p.ParamDef.Constant.Value);
 			}
 			output.WriteLine();
 			WriteAttributes(p.ParamDef.CustomAttributes);
@@ -679,7 +679,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 			if (field.HasConstant) {
 				output.Write(" = ");
-				WriteConstant(field.Constant);
+				WriteConstant(field.Constant.Value);
 			}
 			output.WriteLine();
 			if (field.HasCustomAttributes) {

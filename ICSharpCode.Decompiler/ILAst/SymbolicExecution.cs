@@ -126,7 +126,7 @@ namespace ICSharpCode.Decompiler.ILAst
 					ILVariable loadedVariable = (ILVariable)expr.Operand;
 					if (stateVariables.Contains(loadedVariable))
 						return new SymbolicValue(SymbolicValueType.State);
-					else if (loadedVariable.IsParameter && loadedVariable.OriginalParameter.Index < 0)
+					else if (loadedVariable.IsParameter && loadedVariable.OriginalParameter.IsHiddenThisParameter)
 						return new SymbolicValue(SymbolicValueType.This);
 					else
 						return Failed();

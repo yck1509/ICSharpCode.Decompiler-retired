@@ -203,7 +203,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				if (node.Match(ILCode.Stfld, out field, out instExpr, out stExpr) &&
 				    instExpr.MatchThis() &&
 				    stExpr.Match(ILCode.Ldloc, out arg) &&
-				    arg.IsParameter && arg.OriginalParameter.Index == 0)
+				    arg.IsParameter && arg.OriginalParameter.Index == 1)
 				{
 					stateField = GetFieldDefinition(field);
 				}

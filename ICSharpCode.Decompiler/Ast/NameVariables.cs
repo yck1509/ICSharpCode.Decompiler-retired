@@ -309,7 +309,7 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 			
 			string name;
-			if (type.IsArray) {
+			if (type.IsArray || type.IsSZArray) {
 				name = "array";
 			} else if (type.IsPointer || type.IsByRef) {
 				name = "ptr";

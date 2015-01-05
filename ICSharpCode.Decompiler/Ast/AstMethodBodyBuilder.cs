@@ -653,7 +653,7 @@ namespace ICSharpCode.Decompiler.Ast
 						if (!v.IsParameter)
 							localVariablesToDefine.Add((ILVariable)operand);
 						Expression expr;
-						if (v.IsParameter && v.OriginalParameter.Index < 0)
+						if (v.IsParameter && v.OriginalParameter.IsHiddenThisParameter)
 							expr = new ThisReferenceExpression();
 						else
 							expr = new IdentifierExpression(((ILVariable)operand).Name).WithAnnotation(operand);
@@ -661,7 +661,7 @@ namespace ICSharpCode.Decompiler.Ast
 					}
 					case ILCode.Ldloca: {
 						ILVariable v = (ILVariable)operand;
-						if (v.IsParameter && v.OriginalParameter.Index < 0)
+						if (v.IsParameter && v.OriginalParameter.IsHiddenThisParameter)
 							return MakeRef(new ThisReferenceExpression());
 						if (!v.IsParameter)
 							localVariablesToDefine.Add((ILVariable)operand);
@@ -998,7 +998,7 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 			if (target is ThisReferenceExpression && !isVirtual) {
 				// a non-virtual call on "this" might be a "base"-call.
-				if (method.DeclaringType.ResolveTypeDef() != methodDef.DeclaringType) {
+				if (method.DeclaringType.ResolveTypeDef() != this.methodDef.DeclaringType) {
 					// If we're not calling a method in the current class; we must be calling one in the base class.
 					target = new BaseReferenceExpression();
 				}
@@ -1104,7 +1104,7 @@ namespace ICSharpCode.Decompiler.Ast
 			string indexerName = null;
 			foreach (CustomAttribute ca in typeDef.CustomAttributes) {
 				if (ca.Constructor.FullName == "System.Void System.Reflection.DefaultMemberAttribute::.ctor(System.String)") {
-					indexerName = ca.ConstructorArguments.Single().Value as string;
+					indexerName = ca.ConstructorArguments.Single().Value as UTF8String;
 					break;
 				}
 			}
