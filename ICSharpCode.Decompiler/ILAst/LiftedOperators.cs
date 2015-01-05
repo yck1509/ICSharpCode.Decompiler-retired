@@ -20,7 +20,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-using Mono.Cecil;
+using dnlib.DotNet;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -38,8 +38,8 @@ namespace ICSharpCode.Decompiler.ILAst
 
 		sealed class PatternMatcher
 		{
-			readonly TypeSystem typeSystem;
-			public PatternMatcher(TypeSystem typeSystem)
+			readonly ICorLibTypes typeSystem;
+			public PatternMatcher(ICorLibTypes typeSystem)
 			{
 				this.typeSystem = typeSystem;
 			}
@@ -111,7 +111,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				{
 					var args = new ILExpression[this.Arguments.Length];
 					for (int i = 0; i < args.Length; i++) args[i] = this.Arguments[i].BuildNew(pm);
-					TypeReference t = null;
+					TypeSig t = null;
 					switch (code) {
 						case ILCode.Ceq:
 						case ILCode.Cne:
@@ -140,8 +140,8 @@ namespace ICSharpCode.Decompiler.ILAst
 				public override bool Match(PatternMatcher pm, ILExpression e)
 				{
 					if (e.Code != this.code) return false;
-					var m = (MethodReference)e.Operand;
-					return m.Name == this.method && TypeAnalysis.IsNullableType(m.DeclaringType) && base.Match(pm, e);
+					var m = (IMethod)e.Operand;
+					return m.Name == this.method && TypeAnalysis.IsNullableType(m.DeclaringType.ToTypeSig()) && base.Match(pm, e);
 				}
 			}
 
@@ -208,8 +208,8 @@ namespace ICSharpCode.Decompiler.ILAst
 							if (type != OperatorType.Other) return false;
 							break;
 						case ILCode.Call:
-							var m = e.Operand as MethodReference;
-							if (m == null || m.HasThis || !m.HasParameters || e.Arguments.Count > 2 || !IsCustomOperator(m.Name)) return false;
+							var m = e.Operand as IMethod;
+							if (m == null || m.MethodSig.HasThis || m.MethodSig.Params.Count == 0 || e.Arguments.Count > 2 || !IsCustomOperator(m.Name)) return false;
 							break;
 						default: return false;
 					}

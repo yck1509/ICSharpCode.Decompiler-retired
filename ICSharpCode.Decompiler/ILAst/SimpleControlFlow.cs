@@ -21,7 +21,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
-using Mono.Cecil;
+using dnlib.DotNet;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -31,12 +31,12 @@ namespace ICSharpCode.Decompiler.ILAst
 		Dictionary<ILLabel, ILBasicBlock> labelToBasicBlock = new Dictionary<ILLabel, ILBasicBlock>();
 		
 		DecompilerContext context;
-		TypeSystem typeSystem;
+		ICorLibTypes typeSystem;
 		
 		public SimpleControlFlow(DecompilerContext context, ILBlock method)
 		{
 			this.context = context;
-			this.typeSystem = context.CurrentMethod.Module.TypeSystem;
+			this.typeSystem = context.CurrentMethod.Module.CorLibTypes;
 			
 			foreach(ILLabel target in method.GetSelfAndChildrenRecursive<ILExpression>(e => e.IsBranch()).SelectMany(e => e.GetBranchTargets())) {
 				labelGlobalRefCount[target] = labelGlobalRefCount.GetOrDefault(target) + 1;
@@ -77,7 +77,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			{
 				bool isStloc = trueLocVar != null;
 				ILCode opCode = isStloc ? ILCode.Stloc : ILCode.Ret;
-				TypeReference retType = isStloc ? trueLocVar.Type : this.context.CurrentMethod.ReturnType;
+				var retType = isStloc ? trueLocVar.Type : this.context.CurrentMethod.ReturnType;
 				bool retTypeIsBoolean = TypeAnalysis.IsBoolean(retType);
 				int leftBoolVal;
 				int rightBoolVal;
@@ -274,7 +274,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			if (labelGlobalRefCount[followingBlock] > 1)
 				return false;
 			
-			MethodReference opFalse;
+			IMethod opFalse;
 			ILExpression opFalseArg;
 			if (!callExpr.Match(ILCode.Call, out opFalse, out opFalseArg))
 				return false;
@@ -300,7 +300,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			if (_targetVar != targetVar || exitLabel != _exitLabel)
 				return false;
 			
-			MethodReference opBitwise;
+			IMethod opBitwise;
 			ILExpression leftVarExpression;
 			ILExpression rightExpression;
 			if (!opBitwiseCallExpr.Match(ILCode.Call, out opBitwise, out leftVarExpression, out rightExpression))

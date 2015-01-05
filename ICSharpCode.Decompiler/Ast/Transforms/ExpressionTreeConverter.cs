@@ -24,7 +24,8 @@ using System.Reflection;
 using ICSharpCode.Decompiler.ILAst;
 using ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.PatternMatching;
-using Mono.Cecil;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
 
 namespace ICSharpCode.Decompiler.Ast.Transforms
 {
@@ -34,7 +35,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 		public static bool CouldBeExpressionTree(InvocationExpression expr)
 		{
 			if (expr != null && expr.Arguments.Count == 2) {
-				MethodReference mr = expr.Annotation<MethodReference>();
+				IMethod mr = expr.Annotation<IMethod>();
 				return mr != null && mr.Name == "Lambda" && mr.DeclaringType.FullName == "System.Linq.Expressions.Expression";
 			}
 			return false;
@@ -63,7 +64,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 		{
 			InvocationExpression invocation = expr as InvocationExpression;
 			if (invocation != null) {
-				MethodReference mr = invocation.Annotation<MethodReference>();
+				IMethod mr = invocation.Annotation<IMethod>();
 				if (mr != null && mr.DeclaringType.FullName == "System.Linq.Expressions.Expression") {
 					switch (mr.Name) {
 						case "Add":
@@ -268,8 +269,8 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 			Match m = getFieldFromHandlePattern.Match(fieldInfoExpr);
 			if (!m.Success)
 				return NotSupported(invocation);
-			
-			FieldReference fr = m.Get<AstNode>("field").Single().Annotation<FieldReference>();
+
+			IField fr = m.Get<AstNode>("field").Single().Annotation<IField>();
 			if (fr == null)
 				return null;
 			
@@ -306,8 +307,8 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 			Match m = getMethodFromHandlePattern.Match(invocation.Arguments.ElementAt(1));
 			if (!m.Success)
 				return NotSupported(invocation);
-			
-			MethodReference mr = m.Get<AstNode>("method").Single().Annotation<MethodReference>();
+
+			IMethod mr = m.Get<AstNode>("method").Single().Annotation<IMethod>();
 			if (mr == null)
 				return null;
 			
@@ -326,8 +327,8 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 			
 			return convertedTarget.Member(GetPropertyName(mr)).WithAnnotation(mr);
 		}
-		
-		string GetPropertyName(MethodReference accessor)
+
+		string GetPropertyName(IMethod accessor)
 		{
 			string name = accessor.Name;
 			if (name.StartsWith("get_", StringComparison.Ordinal) || name.StartsWith("set_", StringComparison.Ordinal))
@@ -356,8 +357,8 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 				target = invocation.Arguments.ElementAt(0);
 				firstArgumentPosition = 2;
 			}
-			
-			MethodReference mr = m.Get<AstNode>("method").Single().Annotation<MethodReference>();
+
+			IMethod mr = m.Get<AstNode>("method").Single().Annotation<IMethod>();
 			if (mr == null)
 				return null;
 			
@@ -375,9 +376,9 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 			}
 			
 			MemberReferenceExpression mre = convertedTarget.Member(mr.Name);
-			GenericInstanceMethod gim = mr as GenericInstanceMethod;
+			var gim = mr as MethodSpec;
 			if (gim != null) {
-				foreach (TypeReference tr in gim.GenericArguments) {
+				foreach (var tr in gim.GenericInstMethodSig.GenericArguments) {
 					mre.TypeArguments.Add(AstBuilder.ConvertType(tr));
 				}
 			}
@@ -395,9 +396,9 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 					arguments.Add(convertedArgument);
 				}
 			}
-			MethodDefinition methodDef = mr.Resolve();
+			var methodDef = mr.ResolveMethodDef();
 			if (methodDef != null && methodDef.IsGetter) {
-				PropertyDefinition indexer = AstMethodBodyBuilder.GetIndexer(methodDef);
+				PropertyDef indexer = AstMethodBodyBuilder.GetIndexer(methodDef);
 				if (indexer != null)
 					return new IndexerExpression(mre.Target.Detach(), arguments).WithAnnotation(indexer);
 			}
@@ -446,7 +447,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 				case 3:
 					Match m = getMethodFromHandlePattern.Match(invocation.Arguments.ElementAt(2));
 					if (m.Success)
-						return boe.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<MethodReference>());
+						return boe.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<IMethod>());
 					else
 						return null;
 				case 4:
@@ -454,7 +455,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 						return null;
 					m = getMethodFromHandlePattern.Match(invocation.Arguments.ElementAt(3));
 					if (m.Success)
-						return boe.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<MethodReference>());
+						return boe.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<IMethod>());
 					else
 						return null;
 				default:
@@ -490,7 +491,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 				case 2:
 					Match m = getMethodFromHandlePattern.Match(invocation.Arguments.ElementAt(1));
 					if (m.Success)
-						return uoe.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<MethodReference>());
+						return uoe.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<IMethod>());
 					else
 						return null;
 				default:
@@ -531,16 +532,16 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 			Match m = newObjectCtorPattern.Match(invocation.Arguments.First());
 			if (!m.Success)
 				return NotSupported(invocation);
-			
-			MethodReference ctor = m.Get<AstNode>("ctor").Single().Annotation<MethodReference>();
+
+			IMethod ctor = m.Get<AstNode>("ctor").Single().Annotation<IMethod>();
 			if (ctor == null)
 				return null;
 			
 			AstType declaringTypeNode;
-			TypeReference declaringType;
+			ITypeDefOrRef declaringType;
 			if (m.Has("declaringType")) {
 				declaringTypeNode = m.Get<AstType>("declaringType").Single().Clone();
-				declaringType = declaringTypeNode.Annotation<TypeReference>();
+				declaringType = declaringTypeNode.Annotation<ITypeDefOrRef>();
 			} else {
 				declaringTypeNode = AstBuilder.ConvertType(ctor.DeclaringType);
 				declaringType = ctor.DeclaringType;
@@ -556,7 +557,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 				oce.Arguments.AddRange(arguments);
 			}
 			if (invocation.Arguments.Count >= 3 && declaringType.IsAnonymousType()) {
-				MethodDefinition resolvedCtor = ctor.Resolve();
+				MethodDef resolvedCtor = ctor.ResolveMethodDef();
 				if (resolvedCtor == null || resolvedCtor.Parameters.Count != oce.Arguments.Count)
 					return null;
 				AnonymousTypeCreateExpression atce = new AnonymousTypeCreateExpression();
@@ -661,7 +662,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 				string memberName;
 				Match m2 = getMethodFromHandlePattern.Match(bindingTarget);
 				if (m2.Success) {
-					MethodReference setter = m2.Get<AstNode>("method").Single().Annotation<MethodReference>();
+					IMethod setter = m2.Get<AstNode>("method").Single().Annotation<IMethod>();
 					if (setter == null)
 						return null;
 					memberName = GetPropertyName(setter);
@@ -707,7 +708,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 					case 3:
 						Match m = getMethodFromHandlePattern.Match(invocation.Arguments.ElementAt(2));
 						if (m.Success)
-							return cast.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<MethodReference>());
+							return cast.WithAnnotation(m.Get<AstNode>("method").Single().Annotation<IMethod>());
 						else
 							return null;
 				}
@@ -864,7 +865,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 		bool ContainsAnonymousType(AstType type)
 		{
 			foreach (AstType t in type.DescendantsAndSelf.OfType<AstType>()) {
-				TypeReference tr = t.Annotation<TypeReference>();
+				ITypeDefOrRef tr = t.Annotation<ITypeDefOrRef>();
 				if (tr != null && tr.IsAnonymousType())
 					return true;
 			}

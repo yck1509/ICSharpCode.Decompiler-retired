@@ -25,10 +25,8 @@ using System.Text;
 using ICSharpCode.Decompiler;
 using ICSharpCode.Decompiler.Disassembler;
 using ICSharpCode.NRefactory.Utils;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
-using Mono.CSharp;
-using Cecil = Mono.Cecil;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -135,7 +133,7 @@ namespace ICSharpCode.Decompiler.ILAst
 	{
 		public class CatchBlock: ILBlock
 		{
-			public TypeReference ExceptionType;
+			public ITypeDefOrRef ExceptionType;
 			public ILVariable ExceptionVariable;
 			
 			public override void WriteTo(ITextOutput output)
@@ -203,12 +201,12 @@ namespace ICSharpCode.Decompiler.ILAst
 	{
 		public string Name;
 		public bool   IsGenerated;
-		public TypeReference Type;
-		public VariableDefinition OriginalVariable;
-		public ParameterDefinition OriginalParameter;
+		public TypeSig Type;
+		public Local OriginalVariable;
+		public Parameter OriginalParameter;
 		
 		public bool IsPinned {
-			get { return OriginalVariable != null && OriginalVariable.IsPinned; }
+			get { return OriginalVariable != null && OriginalVariable.Type is PinnedSig; }
 		}
 		
 		public bool IsParameter {
@@ -223,8 +221,8 @@ namespace ICSharpCode.Decompiler.ILAst
 	
 	public class ILRange
 	{
-		public int From;
-		public int To;   // Exlusive
+		public uint From;
+		public uint To;   // Exlusive
 		
 		public override string ToString()
 		{
@@ -251,7 +249,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			return ranges;
 		}
 		
-		public static IEnumerable<ILRange> Invert(IEnumerable<ILRange> input, int codeSize)
+		public static IEnumerable<ILRange> Invert(IEnumerable<ILRange> input, uint codeSize)
 		{
 			if (input == null)
 				throw new ArgumentNullException("Input is null!");
@@ -300,8 +298,8 @@ namespace ICSharpCode.Decompiler.ILAst
 		// Mapping to the original instructions (useful for debugging)
 		public List<ILRange> ILRanges { get; set; }
 		
-		public TypeReference ExpectedType { get; set; }
-		public TypeReference InferredType { get; set; }
+		public TypeSig ExpectedType { get; set; }
+		public TypeSig InferredType { get; set; }
 		
 		public static readonly object AnyOperand = new object();
 		
@@ -427,15 +425,15 @@ namespace ICSharpCode.Decompiler.ILAst
 							output.Write(", ");
 						output.WriteReference(labels[i].Name, labels[i]);
 					}
-				} else if (Operand is MethodReference) {
-					MethodReference method = (MethodReference)Operand;
+				} else if (dnlibExtensions.IsMethod(Operand)) {
+					IMethod method = (IMethod)Operand;
 					if (method.DeclaringType != null) {
 						method.DeclaringType.WriteTo(output, ILNameSyntax.ShortTypeName);
 						output.Write("::");
 					}
 					output.WriteReference(method.Name, method);
-				} else if (Operand is FieldReference) {
-					FieldReference field = (FieldReference)Operand;
+				} else if (dnlibExtensions.IsField(Operand)) {
+					IField field = (IField)Operand;
 					field.DeclaringType.WriteTo(output, ILNameSyntax.ShortTypeName);
 					output.Write("::");
 					output.WriteReference(field.Name, field);

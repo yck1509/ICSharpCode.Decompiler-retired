@@ -1,4 +1,4 @@
-// Copyright (c) 2011 AlphaSierraPapa for the SharpDevelop Team
+ï»¿// Copyright (c) 2011 AlphaSierraPapa for the SharpDevelop Team
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this
 // software and associated documentation files (the "Software"), to deal in the Software
@@ -22,9 +22,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-using Mono.Cecil;
-using Mono.Cecil.Cil;
-using Cecil = Mono.Cecil;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -90,8 +89,8 @@ namespace ICSharpCode.Decompiler.ILAst
 		sealed class ByteCode
 		{
 			public ILLabel  Label;      // Non-null only if needed
-			public int      Offset;
-			public int      EndOffset;
+			public uint      Offset;
+			public uint      EndOffset;
 			public ILCode   Code;
 			public object   Operand;
 			public int?     PopCount;   // Null means pop all
@@ -201,7 +200,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			}
 		}
 		
-		MethodDefinition methodDef;
+		MethodDef methodDef;
 		bool optimize;
 		
 		// Virtual instructions to load exception on stack
@@ -209,7 +208,7 @@ namespace ICSharpCode.Decompiler.ILAst
 		
 		DecompilerContext context;
 		
-		public List<ILNode> Build(MethodDefinition methodDef, bool optimize, DecompilerContext context)
+		public List<ILNode> Build(MethodDef methodDef, bool optimize, DecompilerContext context)
 		{
 			this.methodDef = methodDef;
 			this.optimize = optimize;
@@ -224,7 +223,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			return ast;
 		}
 		
-		List<ByteCode> StackAnalysis(MethodDefinition methodDef)
+		List<ByteCode> StackAnalysis(MethodDef methodDef)
 		{
 			Dictionary<Instruction, ByteCode> instrToByteCode = new Dictionary<Instruction, ByteCode>();
 			
@@ -240,14 +239,19 @@ namespace ICSharpCode.Decompiler.ILAst
 				}
 				ILCode code  = (ILCode)inst.OpCode.Code;
 				object operand = inst.Operand;
-				ILCodeUtil.ExpandMacro(ref code, ref operand, methodDef.Body);
+				ILCodeUtil.ExpandMacro(ref code, ref operand, methodDef, methodDef.Body);
+
+				int pops, pushes;
+				inst.CalculateStackUsage(methodDef.HasReturnValue(), out pushes, out pops);
+				var next = inst.GetNext(methodDef.Body);
+
 				ByteCode byteCode = new ByteCode() {
 					Offset      = inst.Offset,
-					EndOffset   = inst.Next != null ? inst.Next.Offset : methodDef.Body.CodeSize,
+					EndOffset   = next != null ? next.Offset : methodDef.Body.GetCodeSize(),
 					Code        = code,
 					Operand     = operand,
-					PopCount    = inst.GetPopDelta(methodDef),
-					PushCount   = inst.GetPushDelta()
+					PopCount    = pops,
+					PushCount   = pushes
 				};
 				if (prefixes != null) {
 					instrToByteCode[prefixes[0]] = byteCode;
@@ -319,7 +323,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				// Calculate new variable state
 				VariableSlot[] newVariableState = VariableSlot.CloneVariableState(byteCode.VariablesBefore);
 				if (byteCode.IsVariableDefinition) {
-					newVariableState[((VariableReference)byteCode.Operand).Index] = new VariableSlot(new [] { byteCode }, false);
+					newVariableState[((Local)byteCode.Operand).Index] = new VariableSlot(new [] { byteCode }, false);
 				}
 				
 				// After the leave, finally block might have touched the variables
@@ -332,7 +336,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				if (!byteCode.Code.IsUnconditionalControlFlow()) {
 					if (exceptionHandlerStarts.Contains(byteCode.Next)) {
 						// Do not fall though down to exception handler
-						// It is invalid IL as per ECMA-335 §12.4.2.8.1, but some obfuscators produce it
+						// It is invalid IL as per ECMA-335 ï¿½12.4.2.8.1, but some obfuscators produce it
 					} else {
 						branchTargets.Add(byteCode.Next);
 					}
@@ -509,7 +513,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			}
 			if (b.Code == ILCode.Ldfld || b.Code == ILCode.Stfld)
 				return true;
-			return (b.Code == ILCode.Call || b.Code == ILCode.Callvirt) && ((MethodReference)b.Operand).HasThis;
+			return (b.Code == ILCode.Call || b.Code == ILCode.Callvirt) && ((IMethod)b.Operand).MethodSig.HasThis;
 		}
 		
 		sealed class VariableInfo
@@ -525,7 +529,7 @@ namespace ICSharpCode.Decompiler.ILAst
 		/// </summary>
 		void ConvertLocalVariables(List<ByteCode> body)
 		{
-			foreach(VariableDefinition varDef in methodDef.Body.Variables) {
+			foreach(Local varDef in methodDef.Body.Variables) {
 				
 				// Find all definitions and uses of this variable
 				var defs = body.Where(b => b.Operand == varDef &&  b.IsVariableDefinition).ToList();
@@ -536,11 +540,12 @@ namespace ICSharpCode.Decompiler.ILAst
 				// If the variable is pinned, use single variable.
 				// If any of the uses is from unknown definition, use single variable
 				// If any of the uses is ldloca with a nondeterministic usage pattern, use  single variable
-				if (!optimize || varDef.IsPinned || uses.Any(b => b.VariablesBefore[varDef.Index].UnknownDefinition || (b.Code == ILCode.Ldloca && !IsDeterministicLdloca(b)))) {				
+				if (!optimize || varDef.Type is PinnedSig || 
+					uses.Any(b => b.VariablesBefore[varDef.Index].UnknownDefinition || (b.Code == ILCode.Ldloca && !IsDeterministicLdloca(b)))) {				
 					newVars = new List<VariableInfo>(1) { new VariableInfo() {
 						Variable = new ILVariable() {
 							Name = string.IsNullOrEmpty(varDef.Name) ? "var_" + varDef.Index : varDef.Name,
-							Type = varDef.IsPinned ? ((PinnedType)varDef.VariableType).ElementType : varDef.VariableType,
+							Type = varDef.Type is PinnedSig ? varDef.Type.Next : varDef.Type,
 							OriginalVariable = varDef
 						},
 						Defs = defs,
@@ -551,7 +556,7 @@ namespace ICSharpCode.Decompiler.ILAst
 					newVars = defs.Select(def => new VariableInfo() {
 						Variable = new ILVariable() {
 							Name = (string.IsNullOrEmpty(varDef.Name) ? "var_" + varDef.Index : varDef.Name) + "_" + def.Offset.ToString("X2"),
-							Type = varDef.VariableType,
+							Type = varDef.Type,
 							OriginalVariable = varDef
 					    },
 					    Defs = new List<ByteCode>() { def },
@@ -603,43 +608,33 @@ namespace ICSharpCode.Decompiler.ILAst
 		
 		void ConvertParameters(List<ByteCode> body)
 		{
-			ILVariable thisParameter = null;
-			if (methodDef.HasThis) {
-				TypeReference type = methodDef.DeclaringType;
-				thisParameter = new ILVariable();
-				thisParameter.Type = type.IsValueType ? new ByReferenceType(type) : type;
-				thisParameter.Name = "this";
-				thisParameter.OriginalParameter = methodDef.Body.ThisParameter;
-			}
-			foreach (ParameterDefinition p in methodDef.Parameters) {
-				this.Parameters.Add(new ILVariable { Type = p.ParameterType, Name = p.Name, OriginalParameter = p });
+			foreach (var p in methodDef.Parameters) {
+				this.Parameters.Add(new ILVariable { Type = p.Type, Name = p.Name, OriginalParameter = p });
 			}
 			if (this.Parameters.Count > 0 && (methodDef.IsSetter || methodDef.IsAddOn || methodDef.IsRemoveOn)) {
 				// last parameter must be 'value', so rename it
 				this.Parameters.Last().Name = "value";
 			}
 			foreach (ByteCode byteCode in body) {
-				ParameterDefinition p;
+				Parameter p;
 				switch (byteCode.Code) {
 					case ILCode.__Ldarg:
-						p = (ParameterDefinition)byteCode.Operand;
+						p = (Parameter)byteCode.Operand;
 						byteCode.Code = ILCode.Ldloc;
-						byteCode.Operand = p.Index < 0 ? thisParameter : this.Parameters[p.Index];
+						byteCode.Operand = this.Parameters[p.Index];
 						break;
 					case ILCode.__Starg:
-						p = (ParameterDefinition)byteCode.Operand;
+						p = (Parameter)byteCode.Operand;
 						byteCode.Code = ILCode.Stloc;
-						byteCode.Operand = p.Index < 0 ? thisParameter : this.Parameters[p.Index];
+						byteCode.Operand = this.Parameters[p.Index];
 						break;
 					case ILCode.__Ldarga:
-						p = (ParameterDefinition)byteCode.Operand;
+						p = (Parameter)byteCode.Operand;
 						byteCode.Code = ILCode.Ldloca;
-						byteCode.Operand = p.Index < 0 ? thisParameter : this.Parameters[p.Index];
+						byteCode.Operand = this.Parameters[p.Index];
 						break;
 				}
 			}
-			if (thisParameter != null)
-				this.Parameters.Add(thisParameter);
 		}
 		
 		List<ILNode> ConvertToAst(List<ByteCode> body, HashSet<ExceptionHandler> ehs)
@@ -650,9 +645,9 @@ namespace ICSharpCode.Decompiler.ILAst
 				ILTryCatchBlock tryCatchBlock = new ILTryCatchBlock();
 				
 				// Find the first and widest scope
-				int tryStart = ehs.Min(eh => eh.TryStart.Offset);
-				int tryEnd   = ehs.Where(eh => eh.TryStart.Offset == tryStart).Max(eh => eh.TryEnd.Offset);
-				var handlers = ehs.Where(eh => eh.TryStart.Offset == tryStart && eh.TryEnd.Offset == tryEnd).ToList();
+				uint tryStart = ehs.Min(eh => eh.TryStart.Offset);
+				uint tryEnd   = ehs.Where(eh => eh.TryStart.Offset == tryStart).Max(eh => eh.TryEnd.Offset);
+				var handlers  = ehs.Where(eh => eh.TryStart.Offset == tryStart && eh.TryEnd.Offset == tryEnd).ToList();
 				
 				// Remember that any part of the body migt have been removed due to unreachability
 				
@@ -675,7 +670,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				// Cut all handlers
 				tryCatchBlock.CatchBlocks = new List<ILTryCatchBlock.CatchBlock>();
 				foreach(ExceptionHandler eh in handlers) {
-					int handlerEndOffset = eh.HandlerEnd == null ? methodDef.Body.CodeSize : eh.HandlerEnd.Offset;
+					uint handlerEndOffset = eh.HandlerEnd == null ? methodDef.Body.GetCodeSize() : eh.HandlerEnd.Offset;
 					int startIdx = 0;
 					while (startIdx < body.Count && body[startIdx].Offset < eh.HandlerStart.Offset) startIdx++;
 					int endIdx = 0;

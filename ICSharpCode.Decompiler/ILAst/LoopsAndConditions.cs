@@ -68,16 +68,16 @@ namespace ICSharpCode.Decompiler.ILAst
 			List<ControlFlowNode> cfNodes = new List<ControlFlowNode>();
 			ControlFlowNode entryPoint = new ControlFlowNode(index++, 0, ControlFlowNodeType.EntryPoint);
 			cfNodes.Add(entryPoint);
-			ControlFlowNode regularExit = new ControlFlowNode(index++, -1, ControlFlowNodeType.RegularExit);
+			ControlFlowNode regularExit = new ControlFlowNode(index++, 0xffffffff, ControlFlowNodeType.RegularExit);
 			cfNodes.Add(regularExit);
-			ControlFlowNode exceptionalExit = new ControlFlowNode(index++, -1, ControlFlowNodeType.ExceptionalExit);
+			ControlFlowNode exceptionalExit = new ControlFlowNode(index++, 0xffffffff, ControlFlowNodeType.ExceptionalExit);
 			cfNodes.Add(exceptionalExit);
 			
 			// Create graph nodes
 			labelToCfNode = new Dictionary<ILLabel, ControlFlowNode>();
 			Dictionary<ILNode, ControlFlowNode> astNodeToCfNode = new Dictionary<ILNode, ControlFlowNode>();
 			foreach(ILBasicBlock node in nodes) {
-				ControlFlowNode cfNode = new ControlFlowNode(index++, -1, ControlFlowNodeType.Normal);
+				ControlFlowNode cfNode = new ControlFlowNode(index++, 0xffffffff, ControlFlowNodeType.Normal);
 				cfNodes.Add(cfNode);
 				astNodeToCfNode[node] = cfNode;
 				cfNode.UserData = node;

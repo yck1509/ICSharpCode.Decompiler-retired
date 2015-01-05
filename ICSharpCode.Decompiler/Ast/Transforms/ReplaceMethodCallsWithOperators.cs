@@ -21,7 +21,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using ICSharpCode.NRefactory.PatternMatching;
-using Mono.Cecil;
+using dnlib.DotNet;
 using Ast = ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.CSharp;
 
@@ -57,7 +57,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 
 		internal static void ProcessInvocationExpression(InvocationExpression invocationExpression)
 		{
-			MethodReference methodRef = invocationExpression.Annotation<MethodReference>();
+			IMethod methodRef = invocationExpression.Annotation<IMethod>();
 			if (methodRef == null)
 				return;
 			var arguments = invocationExpression.Arguments.ToArray();
@@ -99,7 +99,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 						if (mre1 != null && mre1.MemberName == "FieldHandle" && mre1.Target.Annotation<LdTokenAnnotation>() != null) {
 							if (mre2 != null && mre2.MemberName == "TypeHandle" && mre2.Target is TypeOfExpression) {
 								Expression oldArg = ((InvocationExpression)mre1.Target).Arguments.Single();
-								FieldReference field = oldArg.Annotation<FieldReference>();
+								IField field = oldArg.Annotation<IField>();
 								if (field != null) {
 									AstType declaringType = ((TypeOfExpression)mre2.Target).Type.Detach();
 									oldArg.ReplaceWith(declaringType.Member(field.Name).WithAnnotation(field));
@@ -130,8 +130,9 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 			}
 			if (methodRef.Name == "op_Explicit" && arguments.Length == 1) {
 				arguments[0].Remove(); // detach argument
+				var methodDef = methodRef.ResolveMethodDef();
 				invocationExpression.ReplaceWith(
-					arguments[0].CastTo(AstBuilder.ConvertType(methodRef.ReturnType, methodRef.MethodReturnType))
+					arguments[0].CastTo(AstBuilder.ConvertType(methodRef.MethodSig.RetType, methodDef == null ? null : methodDef.Parameters.ReturnParameter.ParamDef))
 					.WithAnnotation(methodRef)
 				);
 				return;
@@ -258,7 +259,7 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 				// detect increment/decrement
 				if (assignment.Right.IsMatch(new PrimitiveExpression(1))) {
 					// only if it's not a custom operator
-					if (assignment.Annotation<MethodReference>() == null) {
+					if (assignment.Annotation<IMethod>() == null) {
 						UnaryOperatorType type;
 						// When the parent is an expression statement, pre- or post-increment doesn't matter;
 						// so we can pick post-increment which is more commonly used (for (int i = 0; i < x; i++))
@@ -336,10 +337,14 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 			// Handle methodof
 			Match m = getMethodOrConstructorFromHandlePattern.Match(castExpression);
 			if (m.Success) {
-				MethodReference method = m.Get<AstNode>("method").Single().Annotation<MethodReference>();
+				IMethod method = m.Get<AstNode>("method").Single().Annotation<IMethod>();
 				if (m.Has("declaringType")) {
 					Expression newNode = m.Get<AstType>("declaringType").Single().Detach().Member(method.Name);
-					newNode = newNode.Invoke(method.Parameters.Select(p => new TypeReferenceExpression(AstBuilder.ConvertType(p.ParameterType, p))));
+					var methodDef = method.ResolveMethodDef();
+					if (methodDef == null)
+						newNode = newNode.Invoke(method.MethodSig.Params.Select(p => new TypeReferenceExpression(AstBuilder.ConvertType(p))));
+					else
+						newNode = newNode.Invoke(methodDef.Parameters.Select(p => new TypeReferenceExpression(AstBuilder.ConvertType(p.Type, p.ParamDef))));
 					newNode.AddAnnotation(method);
 					m.Get<AstNode>("method").Single().ReplaceWith(newNode);
 				}

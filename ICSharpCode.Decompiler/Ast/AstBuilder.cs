@@ -32,14 +32,12 @@ using ICSharpCode.Decompiler.Ast.Transforms;
 using ICSharpCode.Decompiler.ILAst;
 using ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.Utils;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
+using ICSharpCode.NRefactory.TypeSystem;
 
 namespace ICSharpCode.Decompiler.Ast
 {
-	using Ast = ICSharpCode.NRefactory.CSharp;
-	using VarianceModifier = ICSharpCode.NRefactory.TypeSystem.VarianceModifier;
-	
 	[Flags]
 	public enum ConvertTypeOptions
 	{
@@ -64,9 +62,9 @@ namespace ICSharpCode.Decompiler.Ast
 			this.DecompileMethodBodies = true;
 		}
 		
-		public static bool MemberIsHidden(MemberReference member, DecompilerSettings settings)
+		public static bool MemberIsHidden(IMemberRef member, DecompilerSettings settings)
 		{
-			MethodDefinition method = member as MethodDefinition;
+			MethodDef method = member as MethodDef;
 			if (method != null) {
 				if (method.IsGetter || method.IsSetter || method.IsAddOn || method.IsRemoveOn)
 					return true;
@@ -74,7 +72,7 @@ namespace ICSharpCode.Decompiler.Ast
 					return true;
 			}
 
-			TypeDefinition type = member as TypeDefinition;
+			TypeDef type = member as TypeDef;
 			if (type != null) {
 				if (type.DeclaringType != null) {
 					if (settings.AnonymousMethods && IsClosureType(type))
@@ -91,7 +89,7 @@ namespace ICSharpCode.Decompiler.Ast
 				}
 			}
 			
-			FieldDefinition field = member as FieldDefinition;
+			FieldDef field = member as FieldDef;
 			if (field != null) {
 				if (field.IsCompilerGenerated()) {
 					if (settings.AnonymousMethods && IsAnonymousMethodCacheField(field))
@@ -109,22 +107,22 @@ namespace ICSharpCode.Decompiler.Ast
 			return false;
 		}
 
-		static bool IsSwitchOnStringCache(FieldDefinition field)
+		static bool IsSwitchOnStringCache(FieldDef field)
 		{
 			return field.Name.StartsWith("<>f__switch", StringComparison.Ordinal);
 		}
 
-		static bool IsAutomaticPropertyBackingField(FieldDefinition field)
+		static bool IsAutomaticPropertyBackingField(FieldDef field)
 		{
 			return field.HasGeneratedName() && field.Name.EndsWith("BackingField", StringComparison.Ordinal);
 		}
 
-		static bool IsAnonymousMethodCacheField(FieldDefinition field)
+		static bool IsAnonymousMethodCacheField(FieldDef field)
 		{
 			return field.Name.StartsWith("CS$<>", StringComparison.Ordinal) || field.Name.StartsWith("<>f__am", StringComparison.Ordinal);
 		}
 
-		static bool IsClosureType(TypeDefinition type)
+		static bool IsClosureType(TypeDef type)
 		{
 			return type.HasGeneratedName() && type.IsCompilerGenerated() && (type.Name.Contains("DisplayClass") || type.Name.Contains("AnonStorey"));
 		}
@@ -165,25 +163,24 @@ namespace ICSharpCode.Decompiler.Ast
 			syntaxTree.AcceptVisitor(new CSharpOutputVisitor(outputFormatter, formattingPolicy));
 		}
 		
-		public void AddAssembly(AssemblyDefinition assemblyDefinition, bool onlyAssemblyLevel = false)
+		public void AddAssembly(AssemblyDef assemblyDefinition, bool onlyAssemblyLevel = false)
 		{
-			AddAssembly(assemblyDefinition.MainModule, onlyAssemblyLevel);
+			AddAssembly(assemblyDefinition.ManifestModule, onlyAssemblyLevel);
 		}
 		
-		public void AddAssembly(ModuleDefinition moduleDefinition, bool onlyAssemblyLevel = false)
+		public void AddAssembly(ModuleDef moduleDefinition, bool onlyAssemblyLevel = false)
 		{
-			if (moduleDefinition.Assembly != null && moduleDefinition.Assembly.Name.Version != null) {
+			if (moduleDefinition.Assembly != null && moduleDefinition.Assembly.Version != null) {
 				syntaxTree.AddChild(
 					new AttributeSection {
 						AttributeTarget = "assembly",
 						Attributes = {
 							new NRefactory.CSharp.Attribute {
 								Type = new SimpleType("AssemblyVersion")
-									.WithAnnotation(new TypeReference(
-										"System.Reflection", "AssemblyVersionAttribute",
-										moduleDefinition, moduleDefinition.TypeSystem.Corlib)),
+									.WithAnnotation(moduleDefinition.CorLibTypes.GetTypeRef(
+										"System.Reflection", "AssemblyVersionAttribute")),
 								Arguments = {
-									new PrimitiveExpression(moduleDefinition.Assembly.Name.Version.ToString())
+									new PrimitiveExpression(moduleDefinition.Assembly.Version.ToString())
 								}
 							}
 						}
@@ -198,7 +195,7 @@ namespace ICSharpCode.Decompiler.Ast
 			AddTypeForwarderAttributes(syntaxTree, moduleDefinition, "assembly");
 			
 			if (!onlyAssemblyLevel) {
-				foreach (TypeDefinition typeDef in moduleDefinition.Types) {
+				foreach (TypeDef typeDef in moduleDefinition.Types) {
 					// Skip the <Module> class
 					if (typeDef.Name == "<Module>") continue;
 					// Skip any hidden types
@@ -210,22 +207,22 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		void AddTypeForwarderAttributes(SyntaxTree astCompileUnit, ModuleDefinition module, string target)
+		void AddTypeForwarderAttributes(SyntaxTree astCompileUnit, ModuleDef module, string target)
 		{
 			if (!module.HasExportedTypes)
 				return;
 			foreach (ExportedType type in module.ExportedTypes) {
 				if (type.IsForwarder) {
-					var forwardedType = CreateTypeOfExpression(new TypeReference(type.Namespace, type.Name, module, type.Scope));
+					var typeRef = new TypeRefUser(module, type.Namespace, type.Namespace, (IResolutionScope)type.Scope);
+					var forwardedType = CreateTypeOfExpression(typeRef.ToTypeSig());
 					astCompileUnit.AddChild(
 						new AttributeSection {
 							AttributeTarget = target,
 							Attributes = {
 								new NRefactory.CSharp.Attribute {
 									Type = new SimpleType("TypeForwardedTo")
-										.WithAnnotation(new TypeReference(
-											"System.Runtime.CompilerServices", "TypeForwardedToAttribute",
-											module, module.TypeSystem.Corlib)),
+										.WithAnnotation(module.CorLibTypes.GetTypeRef(
+											"System.Runtime.CompilerServices", "TypeForwardedToAttribute")),
 									Arguments = { forwardedType }
 								}
 							}
@@ -250,7 +247,7 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		public void AddType(TypeDefinition typeDef)
+		public void AddType(TypeDef typeDef)
 		{
 			var astType = CreateType(typeDef);
 			NamespaceDeclaration astNS = GetCodeNamespace(typeDef.Namespace);
@@ -261,23 +258,23 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		public void AddMethod(MethodDefinition method)
+		public void AddMethod(MethodDef method)
 		{
 			AstNode node = method.IsConstructor ? (AstNode)CreateConstructor(method) : CreateMethod(method);
 			syntaxTree.Members.Add(node);
 		}
 
-		public void AddProperty(PropertyDefinition property)
+		public void AddProperty(PropertyDef property)
 		{
 			syntaxTree.Members.Add(CreateProperty(property));
 		}
 		
-		public void AddField(FieldDefinition field)
+		public void AddField(FieldDef field)
 		{
 			syntaxTree.Members.Add(CreateField(field));
 		}
 		
-		public void AddEvent(EventDefinition ev)
+		public void AddEvent(EventDef ev)
 		{
 			syntaxTree.Members.Add(CreateEvent(ev));
 		}
@@ -287,10 +284,10 @@ namespace ICSharpCode.Decompiler.Ast
 		/// </summary>
 		/// <param name="typeDef"></param>
 		/// <returns>TypeDeclaration or DelegateDeclaration.</returns>
-		public EntityDeclaration CreateType(TypeDefinition typeDef)
+		public EntityDeclaration CreateType(TypeDef typeDef)
 		{
 			// create type
-			TypeDefinition oldCurrentType = context.CurrentType;
+			TypeDef oldCurrentType = context.CurrentType;
 			context.CurrentType = typeDef;
 			TypeDeclaration astType = new TypeDeclaration();
 			ConvertAttributes(astType, typeDef);
@@ -311,7 +308,7 @@ namespace ICSharpCode.Decompiler.Ast
 				astType.ClassType = ClassType.Class;
 			}
 			
-			IEnumerable<GenericParameter> genericParameters = typeDef.GenericParameters;
+			IEnumerable<GenericParam> genericParameters = typeDef.GenericParameters;
 			if (typeDef.DeclaringType != null && typeDef.DeclaringType.HasGenericParameters)
 				genericParameters = genericParameters.Skip(typeDef.DeclaringType.GenericParameters.Count);
 			astType.TypeParameters.AddRange(MakeTypeParameters(genericParameters));
@@ -321,10 +318,10 @@ namespace ICSharpCode.Decompiler.Ast
 			if (typeDef.IsEnum) {
 				long expectedEnumMemberValue = 0;
 				bool forcePrintingInitializers = IsFlagsEnum(typeDef);
-				foreach (FieldDefinition field in typeDef.Fields) {
+				foreach (FieldDef field in typeDef.Fields) {
 					if (!field.IsStatic) {
 						// the value__ field
-						if (field.FieldType != typeDef.Module.TypeSystem.Int32) {
+						if (field.FieldType.ElementType != ElementType.I4) {
 							astType.AddChild(ConvertType(field.FieldType), Roles.BaseType);
 						}
 					} else {
@@ -349,9 +346,9 @@ namespace ICSharpCode.Decompiler.Ast
 				astType.Constraints.MoveTo(dd.Constraints);
 				foreach (var m in typeDef.Methods) {
 					if (m.Name == "Invoke") {
-						dd.ReturnType = ConvertType(m.ReturnType, m.MethodReturnType);
+						dd.ReturnType = ConvertType(m.ReturnType, m.Parameters.ReturnParameter.ParamDef);
 						dd.Parameters.AddRange(MakeParameters(m));
-						ConvertAttributes(dd, m.MethodReturnType, m.Module);
+						ConvertAttributes(dd, m.Parameters.ReturnParameter, m.Module);
 					}
 				}
 				result = dd;
@@ -361,15 +358,15 @@ namespace ICSharpCode.Decompiler.Ast
 					astType.AddChild(ConvertType(typeDef.BaseType), Roles.BaseType);
 				}
 				foreach (var i in typeDef.Interfaces)
-					astType.AddChild(ConvertType(i), Roles.BaseType);
+					astType.AddChild(ConvertType(i.Interface), Roles.BaseType);
 				
 				AddTypeMembers(astType, typeDef);
 
 				if (astType.Members.OfType<IndexerDeclaration>().Any(idx => idx.PrivateImplementationType.IsNull)) {
 					// Remove the [DefaultMember] attribute if the class contains indexers
 					foreach (AttributeSection section in astType.Attributes) {
-						foreach (Ast.Attribute attr in section.Attributes) {
-							TypeReference tr = attr.Type.Annotation<TypeReference>();
+						foreach (var attr in section.Attributes) {
+							ITypeDefOrRef tr = attr.Type.Annotation<ITypeDefOrRef>();
 							if (tr != null && tr.Name == "DefaultMemberAttribute" && tr.Namespace == "System.Reflection") {
 								attr.Remove();
 							}
@@ -399,17 +396,17 @@ namespace ICSharpCode.Decompiler.Ast
 		/// <summary>
 		/// Creates a typeof-expression for the specified type.
 		/// </summary>
-		public static TypeOfExpression CreateTypeOfExpression(TypeReference type)
+		public static TypeOfExpression CreateTypeOfExpression(TypeSig type)
 		{
 			return new TypeOfExpression(AddEmptyTypeArgumentsForUnboundGenerics(ConvertType(type)));
 		}
 		
 		static AstType AddEmptyTypeArgumentsForUnboundGenerics(AstType type)
 		{
-			TypeReference typeRef = type.Annotation<TypeReference>();
+			ITypeDefOrRef typeRef = type.Annotation<ITypeDefOrRef>();
 			if (typeRef == null)
 				return type;
-			TypeDefinition typeDef = typeRef.Resolve(); // need to resolve to figure out the number of type parameters
+			TypeDef typeDef = typeRef.ResolveTypeDef(); // need to resolve to figure out the number of type parameters
 			if (typeDef == null || !typeDef.HasGenericParameters)
 				return type;
 			SimpleType sType = type as SimpleType;
@@ -442,44 +439,55 @@ namespace ICSharpCode.Decompiler.Ast
 		/// a type system type reference.</param>
 		/// <param name="typeAttributes">Attributes associated with the Cecil type reference.
 		/// This is used to support the 'dynamic' type.</param>
-		public static AstType ConvertType(TypeReference type, ICustomAttributeProvider typeAttributes = null, ConvertTypeOptions options = ConvertTypeOptions.None)
+		public static AstType ConvertType(TypeSig type, IHasCustomAttribute typeAttributes = null, ConvertTypeOptions options = ConvertTypeOptions.None)
 		{
 			int typeIndex = 0;
 			return ConvertType(type, typeAttributes, ref typeIndex, options);
 		}
-		
-		static AstType ConvertType(TypeReference type, ICustomAttributeProvider typeAttributes, ref int typeIndex, ConvertTypeOptions options)
+
+		/// <summary>
+		/// Converts a type reference.
+		/// </summary>
+		/// <param name="type">The Cecil type reference that should be converted into
+		/// a type system type reference.</param>
+		/// <param name="typeAttributes">Attributes associated with the Cecil type reference.
+		/// This is used to support the 'dynamic' type.</param>
+		public static AstType ConvertType(ITypeDefOrRef type, IHasCustomAttribute typeAttributes = null, ConvertTypeOptions options = ConvertTypeOptions.None)
 		{
-			while (type is OptionalModifierType || type is RequiredModifierType) {
-				type = ((TypeSpecification)type).ElementType;
-			}
+			int typeIndex = 0;
+			return ConvertType(type, typeAttributes, ref typeIndex, options);
+		}
+
+		static AstType ConvertType(TypeSig type, IHasCustomAttribute typeAttributes, ref int typeIndex, ConvertTypeOptions options)
+		{
+			type = type.RemoveModifiers();
 			if (type == null) {
 				return AstType.Null;
 			}
 			
-			if (type is Mono.Cecil.ByReferenceType) {
+			if (type is ByRefSig) {
 				typeIndex++;
 				// by reference type cannot be represented in C#; so we'll represent it as a pointer instead
-				return ConvertType((type as Mono.Cecil.ByReferenceType).ElementType, typeAttributes, ref typeIndex, options)
+				return ConvertType(type.Next, typeAttributes, ref typeIndex, options)
 					.MakePointerType();
-			} else if (type is Mono.Cecil.PointerType) {
+			} else if (type is PtrSig) {
 				typeIndex++;
-				return ConvertType((type as Mono.Cecil.PointerType).ElementType, typeAttributes, ref typeIndex, options)
+				return ConvertType(type.Next, typeAttributes, ref typeIndex, options)
 					.MakePointerType();
-			} else if (type is Mono.Cecil.ArrayType) {
+			} else if (type is ArraySigBase) {
 				typeIndex++;
-				return ConvertType((type as Mono.Cecil.ArrayType).ElementType, typeAttributes, ref typeIndex, options)
-					.MakeArrayType((type as Mono.Cecil.ArrayType).Rank);
-			} else if (type is GenericInstanceType) {
-				GenericInstanceType gType = (GenericInstanceType)type;
-				if (gType.ElementType.Namespace == "System" && gType.ElementType.Name == "Nullable`1" && gType.GenericArguments.Count == 1) {
+				return ConvertType(type.Next, typeAttributes, ref typeIndex, options)
+					.MakeArrayType((int)(type as ArraySigBase).Rank);
+			} else if (type is GenericInstSig) {
+				GenericInstSig gType = (GenericInstSig)type;
+				if (gType.GenericType.Namespace == "System" && gType.GenericType.TypeName == "Nullable`1" && gType.GenericArguments.Count == 1) {
 					typeIndex++;
 					return new ComposedType {
 						BaseType = ConvertType(gType.GenericArguments[0], typeAttributes, ref typeIndex, options),
 						HasNullableSpecifier = true
 					};
 				}
-				AstType baseType = ConvertType(gType.ElementType, typeAttributes, ref typeIndex, options & ~ConvertTypeOptions.IncludeTypeParameterDefinitions);
+				AstType baseType = ConvertType(gType.GenericType, typeAttributes, ref typeIndex, options & ~ConvertTypeOptions.IncludeTypeParameterDefinitions);
 				List<AstType> typeArguments = new List<AstType>();
 				foreach (var typeArgument in gType.GenericArguments) {
 					typeIndex++;
@@ -487,9 +495,18 @@ namespace ICSharpCode.Decompiler.Ast
 				}
 				ApplyTypeArgumentsTo(baseType, typeArguments);
 				return baseType;
-			} else if (type is GenericParameter) {
-				return new SimpleType(type.Name);
-			} else if (type.IsNested) {
+			} else if (type is GenericSig) {
+				return new SimpleType(type.TypeName);
+			} else if (type is TypeDefOrRefSig) {
+				return ConvertType(((TypeDefOrRefSig)type).TypeDefOrRef, typeAttributes, ref typeIndex, options);
+			} else {
+				throw new NotSupportedException();
+			}
+		}
+		
+		static AstType ConvertType(ITypeDefOrRef type, IHasCustomAttribute typeAttributes, ref int typeIndex, ConvertTypeOptions options)
+		{
+			if (type.DeclaringType != null) {
 				AstType typeRef = ConvertType(type.DeclaringType, typeAttributes, ref typeIndex, options & ~ConvertTypeOptions.IncludeTypeParameterDefinitions);
 				string namepart = ICSharpCode.NRefactory.TypeSystem.ReflectionHelper.SplitTypeParameterCountFromReflectionName(type.Name);
 				MemberType memberType = new MemberType { Target = typeRef, MemberName = namepart };
@@ -569,12 +586,13 @@ namespace ICSharpCode.Decompiler.Ast
 				}
 			}
 		}
-		
-		static void AddTypeParameterDefininitionsTo(TypeReference type, AstType astType)
+
+		static void AddTypeParameterDefininitionsTo(ITypeDefOrRef type, AstType astType)
 		{
-			if (type.HasGenericParameters) {
+			TypeDef typeDef = type.ResolveTypeDef();
+			if (typeDef != null && typeDef.HasGenericParameters) {
 				List<AstType> typeArguments = new List<AstType>();
-				foreach (GenericParameter gp in type.GenericParameters) {
+				foreach (var gp in typeDef.GenericParameters) {
 					typeArguments.Add(new SimpleType(gp.Name));
 				}
 				ApplyTypeArgumentsTo(astType, typeArguments);
@@ -589,7 +607,7 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 			MemberType mt = baseType as MemberType;
 			if (mt != null) {
-				TypeReference type = mt.Annotation<TypeReference>();
+				ITypeDefOrRef type = mt.Annotation<ITypeDefOrRef>();
 				if (type != null) {
 					int typeParameterCount;
 					ICSharpCode.NRefactory.TypeSystem.ReflectionHelper.SplitTypeParameterCountFromReflectionName(type.Name, out typeParameterCount);
@@ -607,14 +625,14 @@ namespace ICSharpCode.Decompiler.Ast
 		
 		const string DynamicAttributeFullName = "System.Runtime.CompilerServices.DynamicAttribute";
 		
-		static bool HasDynamicAttribute(ICustomAttributeProvider attributeProvider, int typeIndex)
+		static bool HasDynamicAttribute(IHasCustomAttribute attributeProvider, int typeIndex)
 		{
 			if (attributeProvider == null || !attributeProvider.HasCustomAttributes)
 				return false;
 			foreach (CustomAttribute a in attributeProvider.CustomAttributes) {
 				if (a.Constructor.DeclaringType.FullName == DynamicAttributeFullName) {
 					if (a.ConstructorArguments.Count == 1) {
-						CustomAttributeArgument[] values = a.ConstructorArguments[0].Value as CustomAttributeArgument[];
+						var values = a.ConstructorArguments[0].Value as CAArgument[];
 						if (values != null && typeIndex < values.Length && values[typeIndex].Value is bool)
 							return (bool)values[typeIndex].Value;
 					}
@@ -626,7 +644,7 @@ namespace ICSharpCode.Decompiler.Ast
 		#endregion
 		
 		#region ConvertModifiers
-		Modifiers ConvertModifiers(TypeDefinition typeDef)
+		Modifiers ConvertModifiers(TypeDef typeDef)
 		{
 			Modifiers modifiers = Modifiers.None;
 			if (typeDef.IsNestedPrivate)
@@ -650,7 +668,7 @@ namespace ICSharpCode.Decompiler.Ast
 			return modifiers;
 		}
 		
-		Modifiers ConvertModifiers(FieldDefinition fieldDef)
+		Modifiers ConvertModifiers(FieldDef fieldDef)
 		{
 			Modifiers modifiers = Modifiers.None;
 			if (fieldDef.IsPrivate)
@@ -674,14 +692,14 @@ namespace ICSharpCode.Decompiler.Ast
 					modifiers |= Modifiers.Readonly;
 			}
 			
-			RequiredModifierType modreq = fieldDef.FieldType as RequiredModifierType;
-			if (modreq != null && modreq.ModifierType.FullName == typeof(IsVolatile).FullName)
+			CModReqdSig modreq = fieldDef.FieldType as CModReqdSig;
+			if (modreq != null && modreq.Modifier.FullName == typeof(IsVolatile).FullName)
 				modifiers |= Modifiers.Volatile;
 			
 			return modifiers;
 		}
 		
-		Modifiers ConvertModifiers(MethodDefinition methodDef)
+		Modifiers ConvertModifiers(MethodDef methodDef)
 		{
 			if (methodDef == null)
 				return Modifiers.None;
@@ -722,10 +740,10 @@ namespace ICSharpCode.Decompiler.Ast
 
 		#endregion
 		
-		void AddTypeMembers(TypeDeclaration astType, TypeDefinition typeDef)
+		void AddTypeMembers(TypeDeclaration astType, TypeDef typeDef)
 		{
 			// Nested types
-			foreach (TypeDefinition nestedTypeDef in typeDef.NestedTypes) {
+			foreach (var nestedTypeDef in typeDef.NestedTypes) {
 				if (MemberIsHidden(nestedTypeDef, context.Settings))
 					continue;
 				var nestedType = CreateType(nestedTypeDef);
@@ -734,23 +752,23 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 			
 			// Add fields
-			foreach(FieldDefinition fieldDef in typeDef.Fields) {
+			foreach(var fieldDef in typeDef.Fields) {
 				if (MemberIsHidden(fieldDef, context.Settings)) continue;
 				astType.AddChild(CreateField(fieldDef), Roles.TypeMemberRole);
 			}
 			
 			// Add events
-			foreach(EventDefinition eventDef in typeDef.Events) {
+			foreach(var eventDef in typeDef.Events) {
 				astType.AddChild(CreateEvent(eventDef), Roles.TypeMemberRole);
 			}
 
 			// Add properties
-			foreach(PropertyDefinition propDef in typeDef.Properties) {
+			foreach(var propDef in typeDef.Properties) {
 				astType.Members.Add(CreateProperty(propDef));
 			}
 			
 			// Add methods
-			foreach(MethodDefinition methodDef in typeDef.Methods) {
+			foreach(var methodDef in typeDef.Methods) {
 				if (MemberIsHidden(methodDef, context.Settings)) continue;
 				
 				if (methodDef.IsConstructor)
@@ -760,11 +778,11 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 
-		EntityDeclaration CreateMethod(MethodDefinition methodDef)
+		EntityDeclaration CreateMethod(MethodDef methodDef)
 		{
 			MethodDeclaration astMethod = new MethodDeclaration();
 			astMethod.AddAnnotation(methodDef);
-			astMethod.ReturnType = ConvertType(methodDef.ReturnType, methodDef.MethodReturnType);
+			astMethod.ReturnType = ConvertType(methodDef.ReturnType, methodDef.Parameters.ReturnParameter.ParamDef);
 			astMethod.Name = CleanName(methodDef.Name);
 			astMethod.TypeParameters.AddRange(MakeTypeParameters(methodDef.GenericParameters));
 			astMethod.Parameters.AddRange(MakeParameters(methodDef));
@@ -772,7 +790,7 @@ namespace ICSharpCode.Decompiler.Ast
 			if (!methodDef.IsVirtual || (methodDef.IsNewSlot && !methodDef.IsPrivate)) astMethod.Constraints.AddRange(MakeConstraints(methodDef.GenericParameters));
 			if (!methodDef.DeclaringType.IsInterface) {
 				if (IsExplicitInterfaceImplementation(methodDef)) {
-					astMethod.PrivateImplementationType = ConvertType(methodDef.Overrides.First().DeclaringType);
+					astMethod.PrivateImplementationType = ConvertType(methodDef.Overrides.First().MethodDeclaration.DeclaringType);
 				} else {
 					astMethod.Modifiers = ConvertModifiers(methodDef);
 					if (methodDef.IsVirtual == methodDef.IsNewSlot)
@@ -811,12 +829,12 @@ namespace ICSharpCode.Decompiler.Ast
 			return astMethod;
 		}
 		
-		bool IsExplicitInterfaceImplementation(MethodDefinition methodDef)
+		bool IsExplicitInterfaceImplementation(MethodDef methodDef)
 		{
 			return methodDef.HasOverrides && methodDef.IsPrivate;
 		}
 
-		IEnumerable<TypeParameterDeclaration> MakeTypeParameters(IEnumerable<GenericParameter> genericParameters)
+		IEnumerable<TypeParameterDeclaration> MakeTypeParameters(IEnumerable<GenericParam> genericParameters)
 		{
 			foreach (var gp in genericParameters) {
 				TypeParameterDeclaration tp = new TypeParameterDeclaration();
@@ -830,7 +848,7 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		IEnumerable<Constraint> MakeConstraints(IEnumerable<GenericParameter> genericParameters)
+		IEnumerable<Constraint> MakeConstraints(IEnumerable<GenericParam> genericParameters)
 		{
 			foreach (var gp in genericParameters) {
 				Constraint c = new Constraint();
@@ -841,10 +859,10 @@ namespace ICSharpCode.Decompiler.Ast
 				if (gp.HasNotNullableValueTypeConstraint)
 					c.BaseTypes.Add(new PrimitiveType("struct"));
 				
-				foreach (var constraintType in gp.Constraints) {
-					if (gp.HasNotNullableValueTypeConstraint && constraintType.FullName == "System.ValueType")
+				foreach (var constraint in gp.GenericParamConstraints) {
+					if (gp.HasNotNullableValueTypeConstraint && constraint.Constraint.FullName == "System.ValueType")
 						continue;
-					c.BaseTypes.Add(ConvertType(constraintType));
+					c.BaseTypes.Add(ConvertType(constraint.Constraint));
 				}
 				
 				if (gp.HasDefaultConstructorConstraint && !gp.HasNotNullableValueTypeConstraint)
@@ -854,7 +872,7 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		ConstructorDeclaration CreateConstructor(MethodDefinition methodDef)
+		ConstructorDeclaration CreateConstructor(MethodDef methodDef)
 		{
 			ConstructorDeclaration astMethod = new ConstructorDeclaration();
 			astMethod.AddAnnotation(methodDef);
@@ -886,7 +904,7 @@ namespace ICSharpCode.Decompiler.Ast
 			return m & ~Modifiers.Private;
 		}
 
-		EntityDeclaration CreateProperty(PropertyDefinition propDef)
+		EntityDeclaration CreateProperty(PropertyDef propDef)
 		{
 			PropertyDeclaration astProp = new PropertyDeclaration();
 			astProp.AddAnnotation(propDef);
@@ -894,7 +912,7 @@ namespace ICSharpCode.Decompiler.Ast
 			Modifiers getterModifiers = Modifiers.None;
 			Modifiers setterModifiers = Modifiers.None;
 			if (IsExplicitInterfaceImplementation(accessor)) {
-				astProp.PrivateImplementationType = ConvertType(accessor.Overrides.First().DeclaringType);
+				astProp.PrivateImplementationType = ConvertType(accessor.Overrides.First().MethodDeclaration.DeclaringType);
 			} else if (!propDef.DeclaringType.IsInterface) {
 				getterModifiers = ConvertModifiers(propDef.GetMethod);
 				setterModifiers = ConvertModifiers(propDef.SetMethod);
@@ -916,7 +934,7 @@ namespace ICSharpCode.Decompiler.Ast
 				}
 			}
 			astProp.Name = CleanName(propDef.Name);
-			astProp.ReturnType = ConvertType(propDef.PropertyType, propDef);
+			astProp.ReturnType = ConvertType(propDef.PropertySig.RetType, propDef);
 			
 			if (propDef.GetMethod != null) {
 				astProp.Getter = new Accessor();
@@ -932,11 +950,11 @@ namespace ICSharpCode.Decompiler.Ast
 				astProp.Setter.Body = CreateMethodBody(propDef.SetMethod);
 				astProp.Setter.AddAnnotation(propDef.SetMethod);
 				ConvertAttributes(astProp.Setter, propDef.SetMethod);
-				ParameterDefinition lastParam = propDef.SetMethod.Parameters.LastOrDefault();
+				Parameter lastParam = propDef.SetMethod.Parameters.LastOrDefault();
 				if (lastParam != null) {
-					ConvertCustomAttributes(astProp.Setter, lastParam, "param");
-					if (lastParam.HasMarshalInfo) {
-						astProp.Setter.Attributes.Add(new AttributeSection(ConvertMarshalInfo(lastParam, propDef.Module)) { AttributeTarget = "param" });
+					ConvertCustomAttributes(astProp.Setter, lastParam.ParamDef, "param");
+					if (lastParam.HasParamDef && lastParam.ParamDef.HasMarshalType) {
+						astProp.Setter.Attributes.Add(new AttributeSection(ConvertMarshalInfo(lastParam.ParamDef, propDef.Module)) { AttributeTarget = "param" });
 					}
 				}
 				
@@ -954,7 +972,7 @@ namespace ICSharpCode.Decompiler.Ast
 			return member;
 		}
 
-		IndexerDeclaration ConvertPropertyToIndexer(PropertyDeclaration astProp, PropertyDefinition propDef)
+		IndexerDeclaration ConvertPropertyToIndexer(PropertyDeclaration astProp, PropertyDef propDef)
 		{
 			var astIndexer = new IndexerDeclaration();
 			astIndexer.CopyAnnotationsFrom(astProp);
@@ -964,11 +982,11 @@ namespace ICSharpCode.Decompiler.Ast
 			astIndexer.ReturnType = astProp.ReturnType.Detach();
 			astIndexer.Getter = astProp.Getter.Detach();
 			astIndexer.Setter = astProp.Setter.Detach();
-			astIndexer.Parameters.AddRange(MakeParameters(propDef.Parameters));
+			astIndexer.Parameters.AddRange(MakeParameters(propDef.GetParameters()));
 			return astIndexer;
 		}
 		
-		EntityDeclaration CreateEvent(EventDefinition eventDef)
+		EntityDeclaration CreateEvent(EventDef eventDef)
 		{
 			if (eventDef.AddMethod != null && eventDef.AddMethod.IsAbstract) {
 				// An abstract event cannot be custom
@@ -989,7 +1007,7 @@ namespace ICSharpCode.Decompiler.Ast
 				if (eventDef.AddMethod == null || !IsExplicitInterfaceImplementation(eventDef.AddMethod))
 					astEvent.Modifiers = ConvertModifiers(eventDef.AddMethod);
 				else
-					astEvent.PrivateImplementationType = ConvertType(eventDef.AddMethod.Overrides.First().DeclaringType);
+					astEvent.PrivateImplementationType = ConvertType(eventDef.AddMethod.Overrides.First().MethodDeclaration.DeclaringType);
 				
 				if (eventDef.AddMethod != null) {
 					astEvent.AddAccessor = new Accessor {
@@ -1003,7 +1021,7 @@ namespace ICSharpCode.Decompiler.Ast
 					}.WithAnnotation(eventDef.RemoveMethod);
 					ConvertAttributes(astEvent.RemoveAccessor, eventDef.RemoveMethod);
 				}
-				MethodDefinition accessor = eventDef.AddMethod ?? eventDef.RemoveMethod;
+				MethodDef accessor = eventDef.AddMethod ?? eventDef.RemoveMethod;
 				if (accessor.IsVirtual == accessor.IsNewSlot) {
 					SetNewModifier(astEvent);
 				}
@@ -1013,7 +1031,7 @@ namespace ICSharpCode.Decompiler.Ast
 		
 		public bool DecompileMethodBodies { get; set; }
 		
-		BlockStatement CreateMethodBody(MethodDefinition method, IEnumerable<ParameterDeclaration> parameters = null)
+		BlockStatement CreateMethodBody(MethodDef method, IEnumerable<ParameterDeclaration> parameters = null)
 		{
 			if (DecompileMethodBodies)
 				return AstMethodBodyBuilder.CreateMethodBody(method, context, parameters);
@@ -1021,7 +1039,7 @@ namespace ICSharpCode.Decompiler.Ast
 				return null;
 		}
 
-		FieldDeclaration CreateField(FieldDefinition fieldDef)
+		FieldDeclaration CreateField(FieldDef fieldDef)
 		{
 			FieldDeclaration astField = new FieldDeclaration();
 			astField.AddAnnotation(fieldDef);
@@ -1030,17 +1048,17 @@ namespace ICSharpCode.Decompiler.Ast
 			astField.ReturnType = ConvertType(fieldDef.FieldType, fieldDef);
 			astField.Modifiers = ConvertModifiers(fieldDef);
 			if (fieldDef.HasConstant) {
-				initializer.Initializer = CreateExpressionForConstant(fieldDef.Constant, fieldDef.FieldType, fieldDef.DeclaringType.IsEnum);
+				initializer.Initializer = CreateExpressionForConstant(fieldDef.Constant.Value, fieldDef.FieldType, fieldDef.DeclaringType.IsEnum);
 			}
 			ConvertAttributes(astField, fieldDef);
 			SetNewModifier(astField);
 			return astField;
 		}
 		
-		static Expression CreateExpressionForConstant(object constant, TypeReference type, bool isEnumMemberDeclaration = false)
+		static Expression CreateExpressionForConstant(object constant, TypeSig type, bool isEnumMemberDeclaration = false)
 		{
 			if (constant == null) {
-				if (type.IsValueType && !(type.Namespace == "System" && type.Name == "Nullable`1"))
+				if (type.IsValueType && !(type.Namespace == "System" && type.TypeName == "Nullable`1"))
 					return new DefaultValueExpression(ConvertType(type));
 				else
 					return new NullReferenceExpression();
@@ -1054,51 +1072,54 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		public static IEnumerable<ParameterDeclaration> MakeParameters(MethodDefinition method, bool isLambda = false)
+		public static IEnumerable<ParameterDeclaration> MakeParameters(MethodDef method, bool isLambda = false)
 		{
 			var parameters = MakeParameters(method.Parameters, isLambda);
-			if (method.CallingConvention == MethodCallingConvention.VarArg) {
+			if (method.CallingConvention == dnlib.DotNet.CallingConvention.VarArg) {
 				return parameters.Concat(new[] { new ParameterDeclaration { Type = new PrimitiveType("__arglist") } });
 			} else {
 				return parameters;
 			}
 		}
 		
-		public static IEnumerable<ParameterDeclaration> MakeParameters(IEnumerable<ParameterDefinition> paramCol, bool isLambda = false)
+		public static IEnumerable<ParameterDeclaration> MakeParameters(IEnumerable<Parameter> paramCol, bool isLambda = false)
 		{
-			foreach(ParameterDefinition paramDef in paramCol) {
+			foreach(Parameter param in paramCol) {
 				ParameterDeclaration astParam = new ParameterDeclaration();
-				astParam.AddAnnotation(paramDef);
-				if (!(isLambda && paramDef.ParameterType.ContainsAnonymousType()))
-					astParam.Type = ConvertType(paramDef.ParameterType, paramDef);
-				astParam.Name = paramDef.Name;
+				astParam.AddAnnotation(param);
+				if (!(isLambda && param.Type.ContainsAnonymousType()))
+					astParam.Type = ConvertType(param.Type, param.ParamDef);
+				astParam.Name = param.Name;
+
+				if (!param.HasParamDef)
+					continue;
 				
-				if (paramDef.ParameterType is ByReferenceType) {
-					astParam.ParameterModifier = (!paramDef.IsIn && paramDef.IsOut) ? ParameterModifier.Out : ParameterModifier.Ref;
+				if (param.Type is ByRefSig) {
+					astParam.ParameterModifier = (!param.ParamDef.IsIn && param.ParamDef.IsOut) ? ParameterModifier.Out : ParameterModifier.Ref;
 					ComposedType ct = astParam.Type as ComposedType;
 					if (ct != null && ct.PointerRank > 0)
 						ct.PointerRank--;
 				}
 				
-				if (paramDef.HasCustomAttributes) {
-					foreach (CustomAttribute ca in paramDef.CustomAttributes) {
+				if (param.ParamDef.HasCustomAttributes) {
+					foreach (CustomAttribute ca in param.ParamDef.CustomAttributes) {
 						if (ca.AttributeType.Name == "ParamArrayAttribute" && ca.AttributeType.Namespace == "System")
 							astParam.ParameterModifier = ParameterModifier.Params;
 					}
 				}
-				if (paramDef.IsOptional) {
-					astParam.DefaultExpression = CreateExpressionForConstant(paramDef.Constant, paramDef.ParameterType);
+				if (param.ParamDef.IsOptional) {
+					astParam.DefaultExpression = CreateExpressionForConstant(param.ParamDef.Constant.Value, param.Type);
 				}
 				
-				ConvertCustomAttributes(astParam, paramDef);
-				ModuleDefinition module = ((MethodDefinition)paramDef.Method).Module;
-				if (paramDef.HasMarshalInfo) {
-					astParam.Attributes.Add(new AttributeSection(ConvertMarshalInfo(paramDef, module)));
+				ConvertCustomAttributes(astParam, param.ParamDef);
+				ModuleDef module = param.Method.Module;
+				if (param.ParamDef.HasMarshalType) {
+					astParam.Attributes.Add(new AttributeSection(ConvertMarshalInfo(param.ParamDef, module)));
 				}
 				if (astParam.ParameterModifier != ParameterModifier.Out) {
-					if (paramDef.IsIn)
+					if (param.ParamDef.IsIn)
 						astParam.Attributes.Add(new AttributeSection(CreateNonCustomAttribute(typeof(InAttribute), module)));
-					if (paramDef.IsOut)
+					if (param.ParamDef.IsOut)
 						astParam.Attributes.Add(new AttributeSection(CreateNonCustomAttribute(typeof(OutAttribute), module)));
 				}
 				yield return astParam;
@@ -1106,7 +1127,7 @@ namespace ICSharpCode.Decompiler.Ast
 		}
 		
 		#region ConvertAttributes
-		void ConvertAttributes(EntityDeclaration attributedNode, TypeDefinition typeDefinition)
+		void ConvertAttributes(EntityDeclaration attributedNode, TypeDef typeDefinition)
 		{
 			ConvertCustomAttributes(attributedNode, typeDefinition);
 			ConvertSecurityAttributes(attributedNode, typeDefinition);
@@ -1162,7 +1183,7 @@ namespace ICSharpCode.Decompiler.Ast
 			#endregion
 		}
 		
-		void ConvertAttributes(EntityDeclaration attributedNode, MethodDefinition methodDefinition)
+		void ConvertAttributes(EntityDeclaration attributedNode, MethodDef methodDefinition)
 		{
 			ConvertCustomAttributes(attributedNode, methodDefinition);
 			ConvertSecurityAttributes(attributedNode, methodDefinition);
@@ -1170,9 +1191,9 @@ namespace ICSharpCode.Decompiler.Ast
 			MethodImplAttributes implAttributes = methodDefinition.ImplAttributes & ~MethodImplAttributes.CodeTypeMask;
 			
 			#region DllImportAttribute
-			if (methodDefinition.HasPInvokeInfo && methodDefinition.PInvokeInfo != null) {
-				PInvokeInfo info = methodDefinition.PInvokeInfo;
-				Ast.Attribute dllImport = CreateNonCustomAttribute(typeof(DllImportAttribute));
+			if (methodDefinition.HasImplMap) {
+				var info = methodDefinition.ImplMap;
+				var dllImport = CreateNonCustomAttribute(typeof(DllImportAttribute));
 				dllImport.Arguments.Add(new PrimitiveExpression(info.Module.Name));
 				
 				if (info.IsBestFitDisabled)
@@ -1180,27 +1201,27 @@ namespace ICSharpCode.Decompiler.Ast
 				if (info.IsBestFitEnabled)
 					dllImport.AddNamedArgument("BestFitMapping", new PrimitiveExpression(true));
 				
-				CallingConvention callingConvention;
+				System.Runtime.InteropServices.CallingConvention callingConvention;
 				switch (info.Attributes & PInvokeAttributes.CallConvMask) {
 					case PInvokeAttributes.CallConvCdecl:
-						callingConvention = CallingConvention.Cdecl;
+						callingConvention = System.Runtime.InteropServices.CallingConvention.Cdecl;
 						break;
 					case PInvokeAttributes.CallConvFastcall:
-						callingConvention = CallingConvention.FastCall;
+						callingConvention = System.Runtime.InteropServices.CallingConvention.FastCall;
 						break;
 					case PInvokeAttributes.CallConvStdCall:
-						callingConvention = CallingConvention.StdCall;
+						callingConvention = System.Runtime.InteropServices.CallingConvention.StdCall;
 						break;
 					case PInvokeAttributes.CallConvThiscall:
-						callingConvention = CallingConvention.ThisCall;
+						callingConvention = System.Runtime.InteropServices.CallingConvention.ThisCall;
 						break;
 					case PInvokeAttributes.CallConvWinapi:
-						callingConvention = CallingConvention.Winapi;
+						callingConvention = System.Runtime.InteropServices.CallingConvention.Winapi;
 						break;
 					default:
 						throw new NotSupportedException("unknown calling convention");
 				}
-				if (callingConvention != CallingConvention.Winapi)
+				if (callingConvention != System.Runtime.InteropServices.CallingConvention.Winapi)
 					dllImport.AddNamedArgument("CallingConvention", new IdentifierExpression("CallingConvention").Member(callingConvention.ToString()));
 				
 				CharSet charSet = CharSet.None;
@@ -1217,9 +1238,9 @@ namespace ICSharpCode.Decompiler.Ast
 				}
 				if (charSet != CharSet.None)
 					dllImport.AddNamedArgument("CharSet", new IdentifierExpression("CharSet").Member(charSet.ToString()));
-				
-				if (!string.IsNullOrEmpty(info.EntryPoint) && info.EntryPoint != methodDefinition.Name)
-					dllImport.AddNamedArgument("EntryPoint", new PrimitiveExpression(info.EntryPoint));
+
+				if (!string.IsNullOrEmpty(info.Name) && info.Name != methodDefinition.Name)
+					dllImport.AddNamedArgument("EntryPoint", new PrimitiveExpression(info.Name));
 				
 				if (info.IsNoMangle)
 					dllImport.AddNamedArgument("ExactSpelling", new PrimitiveExpression(true));
@@ -1250,110 +1271,109 @@ namespace ICSharpCode.Decompiler.Ast
 			
 			#region MethodImplAttribute
 			if (implAttributes != 0) {
-				Ast.Attribute methodImpl = CreateNonCustomAttribute(typeof(MethodImplAttribute));
-				TypeReference methodImplOptions = new TypeReference(
-					"System.Runtime.CompilerServices", "MethodImplOptions",
-					methodDefinition.Module, methodDefinition.Module.TypeSystem.Corlib);
-				methodImpl.Arguments.Add(MakePrimitive((long)implAttributes, methodImplOptions));
+				var methodImpl = CreateNonCustomAttribute(typeof(MethodImplAttribute));
+				var methodImplOptions = methodDefinition.Module.CorLibTypes.GetTypeRef(
+					"System.Runtime.CompilerServices", "MethodImplOptions");
+				methodImpl.Arguments.Add(MakePrimitive((long)implAttributes, methodImplOptions.ToTypeSig()));
 				attributedNode.Attributes.Add(new AttributeSection(methodImpl));
 			}
 			#endregion
 			
-			ConvertAttributes(attributedNode, methodDefinition.MethodReturnType, methodDefinition.Module);
+			ConvertAttributes(attributedNode, methodDefinition.Parameters.ReturnParameter, methodDefinition.Module);
 		}
 		
-		void ConvertAttributes(EntityDeclaration attributedNode, MethodReturnType methodReturnType, ModuleDefinition module)
+		void ConvertAttributes(EntityDeclaration attributedNode, Parameter retnParam, ModuleDef module)
 		{
-			ConvertCustomAttributes(attributedNode, methodReturnType, "return");
-			if (methodReturnType.HasMarshalInfo) {
-				var marshalInfo = ConvertMarshalInfo(methodReturnType, module);
+			ConvertCustomAttributes(attributedNode, retnParam.ParamDef, "return");
+			if (retnParam.HasParamDef && retnParam.ParamDef.HasMarshalType) {
+				var marshalInfo = ConvertMarshalInfo(retnParam.ParamDef, module);
 				attributedNode.Attributes.Add(new AttributeSection(marshalInfo) { AttributeTarget = "return" });
 			}
 		}
 		
-		internal static void ConvertAttributes(EntityDeclaration attributedNode, FieldDefinition fieldDefinition, string attributeTarget = null)
+		internal static void ConvertAttributes(EntityDeclaration attributedNode, FieldDef fieldDefinition, string attributeTarget = null)
 		{
 			ConvertCustomAttributes(attributedNode, fieldDefinition);
 			
 			#region FieldOffsetAttribute
 			if (fieldDefinition.HasLayoutInfo) {
-				Ast.Attribute fieldOffset = CreateNonCustomAttribute(typeof(FieldOffsetAttribute), fieldDefinition.Module);
-				fieldOffset.Arguments.Add(new PrimitiveExpression(fieldDefinition.Offset));
+				var fieldOffset = CreateNonCustomAttribute(typeof(FieldOffsetAttribute), fieldDefinition.Module);
+				fieldOffset.Arguments.Add(new PrimitiveExpression(fieldDefinition.FieldOffset));
 				attributedNode.Attributes.Add(new AttributeSection(fieldOffset) { AttributeTarget = attributeTarget });
 			}
 			#endregion
 			
 			#region NonSerializedAttribute
 			if (fieldDefinition.IsNotSerialized) {
-				Ast.Attribute nonSerialized = CreateNonCustomAttribute(typeof(NonSerializedAttribute), fieldDefinition.Module);
+				var nonSerialized = CreateNonCustomAttribute(typeof(NonSerializedAttribute), fieldDefinition.Module);
 				attributedNode.Attributes.Add(new AttributeSection(nonSerialized) { AttributeTarget = attributeTarget });
 			}
 			#endregion
 			
-			if (fieldDefinition.HasMarshalInfo) {
+			if (fieldDefinition.HasMarshalType) {
 				attributedNode.Attributes.Add(new AttributeSection(ConvertMarshalInfo(fieldDefinition, fieldDefinition.Module))  { AttributeTarget = attributeTarget });
 			}
 		}
 		
 		#region MarshalAsAttribute (ConvertMarshalInfo)
-		static Ast.Attribute ConvertMarshalInfo(IMarshalInfoProvider marshalInfoProvider, ModuleDefinition module)
+		static ICSharpCode.NRefactory.CSharp.Attribute ConvertMarshalInfo(IHasFieldMarshal marshalInfoProvider, ModuleDef module)
 		{
-			MarshalInfo marshalInfo = marshalInfoProvider.MarshalInfo;
-			Ast.Attribute attr = CreateNonCustomAttribute(typeof(MarshalAsAttribute), module);
-			var unmanagedType = new TypeReference("System.Runtime.InteropServices", "UnmanagedType", module, module.TypeSystem.Corlib);
-			attr.Arguments.Add(MakePrimitive((int)marshalInfo.NativeType, unmanagedType));
+			var marshalInfo = marshalInfoProvider.MarshalType;
+			var attr = CreateNonCustomAttribute(typeof(MarshalAsAttribute), module);
+			var unmanagedType = module.CorLibTypes.GetTypeRef("System.Runtime.InteropServices", "UnmanagedType");
+			attr.Arguments.Add(MakePrimitive((int)marshalInfo.NativeType, unmanagedType.ToTypeSig()));
 			
-			FixedArrayMarshalInfo fami = marshalInfo as FixedArrayMarshalInfo;
+			FixedArrayMarshalType fami = marshalInfo as FixedArrayMarshalType;
 			if (fami != null) {
 				attr.AddNamedArgument("SizeConst", new PrimitiveExpression(fami.Size));
-				if (fami.ElementType != NativeType.None)
-					attr.AddNamedArgument("ArraySubType", MakePrimitive((int)fami.ElementType, unmanagedType));
+				if (fami.IsElementTypeValid)
+					attr.AddNamedArgument("ArraySubType", MakePrimitive((int)fami.ElementType, unmanagedType.ToTypeSig()));
 			}
-			SafeArrayMarshalInfo sami = marshalInfo as SafeArrayMarshalInfo;
-			if (sami != null && sami.ElementType != VariantType.None) {
-				var varEnum = new TypeReference("System.Runtime.InteropServices", "VarEnum", module, module.TypeSystem.Corlib);
-				attr.AddNamedArgument("SafeArraySubType", MakePrimitive((int)sami.ElementType, varEnum));
+			SafeArrayMarshalType sami = marshalInfo as SafeArrayMarshalType;
+			if (sami != null && sami.VariantType != VariantType.None) {
+				var varEnum = module.CorLibTypes.GetTypeRef("System.Runtime.InteropServices", "VarEnum");
+				attr.AddNamedArgument("SafeArraySubType", MakePrimitive((int)sami.VariantType, varEnum.ToTypeSig()));
 			}
-			ArrayMarshalInfo ami = marshalInfo as ArrayMarshalInfo;
+			ArrayMarshalType ami = marshalInfo as ArrayMarshalType;
 			if (ami != null) {
-				if (ami.ElementType != NativeType.Max)
-					attr.AddNamedArgument("ArraySubType", MakePrimitive((int)ami.ElementType, unmanagedType));
+				if (ami.IsElementTypeValid)
+					attr.AddNamedArgument("ArraySubType", MakePrimitive((int)ami.ElementType, unmanagedType.ToTypeSig()));
 				if (ami.Size >= 0)
 					attr.AddNamedArgument("SizeConst", new PrimitiveExpression(ami.Size));
-				if (ami.SizeParameterMultiplier != 0 && ami.SizeParameterIndex >= 0)
-					attr.AddNamedArgument("SizeParamIndex", new PrimitiveExpression(ami.SizeParameterIndex));
+				if (ami.Flags != 0 && ami.ParamNumber >= 0)
+					attr.AddNamedArgument("SizeParamIndex", new PrimitiveExpression(ami.ParamNumber));
 			}
-			CustomMarshalInfo cmi = marshalInfo as CustomMarshalInfo;
+			CustomMarshalType cmi = marshalInfo as CustomMarshalType;
 			if (cmi != null) {
-				attr.AddNamedArgument("MarshalType", new PrimitiveExpression(cmi.ManagedType.FullName));
+				attr.AddNamedArgument("MarshalType", new PrimitiveExpression(cmi.CustomMarshaler.FullName));
 				if (!string.IsNullOrEmpty(cmi.Cookie))
 					attr.AddNamedArgument("MarshalCookie", new PrimitiveExpression(cmi.Cookie));
 			}
-			FixedSysStringMarshalInfo fssmi = marshalInfo as FixedSysStringMarshalInfo;
+			FixedSysStringMarshalType fssmi = marshalInfo as FixedSysStringMarshalType;
 			if (fssmi != null) {
 				attr.AddNamedArgument("SizeConst", new PrimitiveExpression(fssmi.Size));
 			}
 			return attr;
 		}
 		#endregion
-		
-		Ast.Attribute CreateNonCustomAttribute(Type attributeType)
+
+		ICSharpCode.NRefactory.CSharp.Attribute CreateNonCustomAttribute(Type attributeType)
 		{
 			return CreateNonCustomAttribute(attributeType, context.CurrentType != null ? context.CurrentType.Module : null);
 		}
-		
-		static Ast.Attribute CreateNonCustomAttribute(Type attributeType, ModuleDefinition module)
+
+		static ICSharpCode.NRefactory.CSharp.Attribute CreateNonCustomAttribute(Type attributeType, ModuleDef module)
 		{
 			Debug.Assert(attributeType.Name.EndsWith("Attribute", StringComparison.Ordinal));
-			Ast.Attribute attr = new Ast.Attribute();
+			var attr = new ICSharpCode.NRefactory.CSharp.Attribute();
 			attr.Type = new SimpleType(attributeType.Name.Substring(0, attributeType.Name.Length - "Attribute".Length));
 			if (module != null) {
-				attr.Type.AddAnnotation(new TypeReference(attributeType.Namespace, attributeType.Name, module, module.TypeSystem.Corlib));
+				attr.Type.AddAnnotation(module.CorLibTypes.GetTypeRef(attributeType.Namespace, attributeType.Name));
 			}
 			return attr;
 		}
 		
-		static void ConvertCustomAttributes(AstNode attributedNode, ICustomAttributeProvider customAttributeProvider, string attributeTarget = null)
+		static void ConvertCustomAttributes(AstNode attributedNode, IHasCustomAttribute customAttributeProvider, string attributeTarget = null)
 		{
 			EntityDeclaration entityDecl = attributedNode as EntityDeclaration;
 			if (customAttributeProvider.HasCustomAttributes) {
@@ -1393,8 +1413,8 @@ namespace ICSharpCode.Decompiler.Ast
 							attribute.Arguments.Add(parameterValue);
 						}
 					}
-					if (customAttribute.HasProperties) {
-						TypeDefinition resolvedAttributeType = customAttribute.AttributeType.Resolve();
+					if (customAttribute.Properties.Any()) {
+						TypeDef resolvedAttributeType = customAttribute.AttributeType.ResolveTypeDef();
 						foreach (var propertyNamedArg in customAttribute.Properties) {
 							var propertyReference = resolvedAttributeType != null ? resolvedAttributeType.Properties.FirstOrDefault(pr => pr.Name == propertyNamedArg.Name) : null;
 							var propertyName = new IdentifierExpression(propertyNamedArg.Name).WithAnnotation(propertyReference);
@@ -1403,8 +1423,8 @@ namespace ICSharpCode.Decompiler.Ast
 						}
 					}
 
-					if (customAttribute.HasFields) {
-						TypeDefinition resolvedAttributeType = customAttribute.AttributeType.Resolve();
+					if (customAttribute.Fields.Any()) {
+						TypeDef resolvedAttributeType = customAttribute.AttributeType.ResolveTypeDef();
 						foreach (var fieldNamedArg in customAttribute.Fields) {
 							var fieldReference = resolvedAttributeType != null ? resolvedAttributeType.Fields.FirstOrDefault(f => f.Name == fieldNamedArg.Name) : null;
 							var fieldName = new IdentifierExpression(fieldNamedArg.Name).WithAnnotation(fieldReference);
@@ -1432,12 +1452,12 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		static void ConvertSecurityAttributes(AstNode attributedNode, ISecurityDeclarationProvider secDeclProvider, string attributeTarget = null)
+		static void ConvertSecurityAttributes(AstNode attributedNode, IHasDeclSecurity secDeclProvider, string attributeTarget = null)
 		{
-			if (!secDeclProvider.HasSecurityDeclarations)
+			if (!secDeclProvider.HasDeclSecurities)
 				return;
 			var attributes = new List<ICSharpCode.NRefactory.CSharp.Attribute>();
-			foreach (var secDecl in secDeclProvider.SecurityDeclarations.OrderBy(d => d.Action)) {
+			foreach (var secDecl in secDeclProvider.DeclSecurities.OrderBy(d => d.Action)) {
 				foreach (var secAttribute in secDecl.SecurityAttributes.OrderBy(a => a.AttributeType.FullName)) {
 					var attribute = new ICSharpCode.NRefactory.CSharp.Attribute();
 					attribute.AddAnnotation(secAttribute);
@@ -1450,11 +1470,11 @@ namespace ICSharpCode.Decompiler.Ast
 					}
 					
 					var module = secAttribute.AttributeType.Module;
-					var securityActionType = new TypeReference("System.Security.Permissions", "SecurityAction", module, module.TypeSystem.Corlib);
-					attribute.Arguments.Add(MakePrimitive((int)secDecl.Action, securityActionType));
+					var securityActionType = module.CorLibTypes.GetTypeRef("System.Security.Permissions", "SecurityAction");
+					attribute.Arguments.Add(MakePrimitive((int)secDecl.Action, securityActionType.ToTypeSig()));
 					
-					if (secAttribute.HasProperties) {
-						TypeDefinition resolvedAttributeType = secAttribute.AttributeType.Resolve();
+					if (secAttribute.Properties.Any()) {
+						TypeDef resolvedAttributeType = secAttribute.AttributeType.ResolveTypeDef();
 						foreach (var propertyNamedArg in secAttribute.Properties) {
 							var propertyReference = resolvedAttributeType != null ? resolvedAttributeType.Properties.FirstOrDefault(pr => pr.Name == propertyNamedArg.Name) : null;
 							var propertyName = new IdentifierExpression(propertyNamedArg.Name).WithAnnotation(propertyReference);
@@ -1463,8 +1483,8 @@ namespace ICSharpCode.Decompiler.Ast
 						}
 					}
 
-					if (secAttribute.HasFields) {
-						TypeDefinition resolvedAttributeType = secAttribute.AttributeType.Resolve();
+					if (secAttribute.Fields.Any()) {
+						TypeDef resolvedAttributeType = secAttribute.AttributeType.ResolveTypeDef();
 						foreach (var fieldNamedArg in secAttribute.Fields) {
 							var fieldReference = resolvedAttributeType != null ? resolvedAttributeType.Fields.FirstOrDefault(f => f.Name == fieldNamedArg.Name) : null;
 							var fieldName = new IdentifierExpression(fieldNamedArg.Name).WithAnnotation(fieldReference);
@@ -1491,48 +1511,48 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		private static Expression ConvertArgumentValue(CustomAttributeArgument argument)
+		private static Expression ConvertArgumentValue(CAArgument argument)
 		{
-			if (argument.Value is CustomAttributeArgument[]) {
+			if (argument.Value is CAArgument[]) {
 				ArrayInitializerExpression arrayInit = new ArrayInitializerExpression();
-				foreach (CustomAttributeArgument element in (CustomAttributeArgument[])argument.Value) {
+				foreach (CAArgument element in (CAArgument[])argument.Value) {
 					arrayInit.Elements.Add(ConvertArgumentValue(element));
 				}
-				ArrayType arrayType = argument.Type as ArrayType;
+				ArraySigBase arrayType = argument.Type as ArraySigBase;
 				return new ArrayCreateExpression {
-					Type = ConvertType(arrayType != null ? arrayType.ElementType : argument.Type),
+					Type = ConvertType(arrayType != null ? arrayType.Next : argument.Type),
 					AdditionalArraySpecifiers = { new ArraySpecifier() },
 					Initializer = arrayInit
 				};
-			} else if (argument.Value is CustomAttributeArgument) {
+			} else if (argument.Value is CAArgument) {
 				// occurs with boxed arguments
-				return ConvertArgumentValue((CustomAttributeArgument)argument.Value);
+				return ConvertArgumentValue((CAArgument)argument.Value);
 			}
-			var type = argument.Type.Resolve();
+			var type = argument.Type.ToTypeDefOrRef().ResolveTypeDef();
 			if (type != null && type.IsEnum) {
-				return MakePrimitive(Convert.ToInt64(argument.Value), type);
-			} else if (argument.Value is TypeReference) {
-				return CreateTypeOfExpression((TypeReference)argument.Value);
+				return MakePrimitive(Convert.ToInt64(argument.Value), argument.Type);
+			} else if (argument.Value is TypeSig) {
+				return CreateTypeOfExpression((TypeSig)argument.Value);
 			} else {
 				return new PrimitiveExpression(argument.Value);
 			}
 		}
 		#endregion
 
-		internal static Expression MakePrimitive(long val, TypeReference type)
+		internal static Expression MakePrimitive(long val, TypeSig type)
 		{
 			if (TypeAnalysis.IsBoolean(type) && val == 0)
-				return new Ast.PrimitiveExpression(false);
+				return new PrimitiveExpression(false);
 			else if (TypeAnalysis.IsBoolean(type) && val == 1)
-				return new Ast.PrimitiveExpression(true);
-			else if (val == 0 && type is PointerType)
-				return new Ast.NullReferenceExpression();
+				return new PrimitiveExpression(true);
+			else if (val == 0 && type is PtrSig)
+				return new NullReferenceExpression();
 			if (type != null)
-			{ // cannot rely on type.IsValueType, it's not set for typerefs (but is set for typespecs)
-				TypeDefinition enumDefinition = type.Resolve();
+			{
+				TypeDef enumDefinition = type.ToTypeDefOrRef().ResolveTypeDef();
 				if (enumDefinition != null && enumDefinition.IsEnum) {
 					TypeCode enumBaseTypeCode = TypeCode.Int32;
-					foreach (FieldDefinition field in enumDefinition.Fields) {
+					foreach (FieldDef field in enumDefinition.Fields) {
 						if (field.IsStatic && object.Equals(CSharpPrimitiveCast.Cast(TypeCode.Int64, field.Constant, false), val))
 							return ConvertType(type).Member(field.Name).WithAnnotation(field);
 						else if (!field.IsStatic)
@@ -1558,7 +1578,7 @@ namespace ICSharpCode.Decompiler.Ast
 								break;
 						}
 						Expression negatedExpr = null;
-						foreach (FieldDefinition field in enumDefinition.Fields.Where(fld => fld.IsStatic)) {
+						foreach (FieldDef field in enumDefinition.Fields.Where(fld => fld.IsStatic)) {
 							long fieldValue = (long)CSharpPrimitiveCast.Cast(TypeCode.Int64, field.Constant, false);
 							if (fieldValue == 0)
 								continue;	// skip None enum value
@@ -1591,16 +1611,16 @@ namespace ICSharpCode.Decompiler.Ast
 							return new UnaryOperatorExpression(UnaryOperatorType.BitNot, negatedExpr);
 						}
 					}
-					return new Ast.PrimitiveExpression(CSharpPrimitiveCast.Cast(enumBaseTypeCode, val, false)).CastTo(ConvertType(type));
+					return new PrimitiveExpression(CSharpPrimitiveCast.Cast(enumBaseTypeCode, val, false)).CastTo(ConvertType(type));
 				}
 			}
 			TypeCode code = TypeAnalysis.GetTypeCode(type);
 			if (code == TypeCode.Object || code == TypeCode.Empty)
 				code = TypeCode.Int32;
-			return new Ast.PrimitiveExpression(CSharpPrimitiveCast.Cast(code, val, false));
+			return new PrimitiveExpression(CSharpPrimitiveCast.Cast(code, val, false));
 		}
 
-		static bool IsFlagsEnum(TypeDefinition type)
+		static bool IsFlagsEnum(TypeDef type)
 		{
 			if (!type.HasCustomAttributes)
 				return false;
@@ -1617,7 +1637,7 @@ namespace ICSharpCode.Decompiler.Ast
 			try {
 				bool addNewModifier = false;
 				if (member is IndexerDeclaration) {
-					var propertyDef = member.Annotation<PropertyDefinition>();
+					var propertyDef = member.Annotation<PropertyDef>();
 					var baseProperties =
 						TypesHierarchyHelpers.FindBaseProperties(propertyDef);
 					addNewModifier = baseProperties.Any();
@@ -1634,9 +1654,9 @@ namespace ICSharpCode.Decompiler.Ast
 
 		private static bool HidesBaseMember(EntityDeclaration member)
 		{
-			var memberDefinition = member.Annotation<IMemberDefinition>();
+			var memberDefinition = member.Annotation<IMemberDef>();
 			bool addNewModifier = false;
-			var methodDefinition = memberDefinition as MethodDefinition;
+			var methodDefinition = memberDefinition as MethodDef;
 			if (methodDefinition != null) {
 				addNewModifier = HidesByName(memberDefinition, includeBaseMethods: false);
 				if (!addNewModifier)
@@ -1652,9 +1672,9 @@ namespace ICSharpCode.Decompiler.Ast
 		/// <param name="member">The derived type's member.</param>
 		/// <param name="includeBaseMethods">true if names of methods declared in base types should also be checked.</param>
 		/// <returns>true if any base member has the same name as given member, otherwise false.</returns>
-		static bool HidesByName(IMemberDefinition member, bool includeBaseMethods)
+		static bool HidesByName(IMemberDef member, bool includeBaseMethods)
 		{
-			Debug.Assert(!(member is PropertyDefinition) || !((PropertyDefinition)member).IsIndexer());
+			Debug.Assert(!(member is PropertyDef) || !((PropertyDef)member).IsIndexer());
 
 			if (member.DeclaringType.BaseType != null) {
 				var baseTypeRef = member.DeclaringType.BaseType;
@@ -1677,8 +1697,8 @@ namespace ICSharpCode.Decompiler.Ast
 			return false;
 		}
 
-		static bool AnyIsHiddenBy<T>(IEnumerable<T> members, IMemberDefinition derived, Predicate<T> condition = null)
-			where T : IMemberDefinition
+		static bool AnyIsHiddenBy<T>(IEnumerable<T> members, IMemberDef derived, Predicate<T> condition = null)
+			where T : IMemberDef
 		{
 			return members.Any(m => m.Name == derived.Name
 			                   && (condition == null || condition(m))

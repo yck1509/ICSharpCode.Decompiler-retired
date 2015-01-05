@@ -17,8 +17,8 @@
 // DEALINGS IN THE SOFTWARE.
 
 using System;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -402,21 +402,21 @@ namespace ICSharpCode.Decompiler.ILAst
 			}
 		}
 		
-		public static void ExpandMacro(ref ILCode code, ref object operand, MethodBody methodBody)
+		public static void ExpandMacro(ref ILCode code, ref object operand, MethodDef method, CilBody body)
 		{
 			switch (code) {
-					case ILCode.__Ldarg_0:   code = ILCode.__Ldarg; operand = methodBody.GetParameter(0); break;
-					case ILCode.__Ldarg_1:   code = ILCode.__Ldarg; operand = methodBody.GetParameter(1); break;
-					case ILCode.__Ldarg_2:   code = ILCode.__Ldarg; operand = methodBody.GetParameter(2); break;
-					case ILCode.__Ldarg_3:   code = ILCode.__Ldarg; operand = methodBody.GetParameter(3); break;
-					case ILCode.__Ldloc_0:   code = ILCode.Ldloc; operand = methodBody.Variables[0]; break;
-					case ILCode.__Ldloc_1:   code = ILCode.Ldloc; operand = methodBody.Variables[1]; break;
-					case ILCode.__Ldloc_2:   code = ILCode.Ldloc; operand = methodBody.Variables[2]; break;
-					case ILCode.__Ldloc_3:   code = ILCode.Ldloc; operand = methodBody.Variables[3]; break;
-					case ILCode.__Stloc_0:   code = ILCode.Stloc; operand = methodBody.Variables[0]; break;
-					case ILCode.__Stloc_1:   code = ILCode.Stloc; operand = methodBody.Variables[1]; break;
-					case ILCode.__Stloc_2:   code = ILCode.Stloc; operand = methodBody.Variables[2]; break;
-					case ILCode.__Stloc_3:   code = ILCode.Stloc; operand = methodBody.Variables[3]; break;
+					case ILCode.__Ldarg_0:   code = ILCode.__Ldarg; operand = method.Parameters[0]; break;
+					case ILCode.__Ldarg_1:   code = ILCode.__Ldarg; operand = method.Parameters[1]; break;
+					case ILCode.__Ldarg_2:   code = ILCode.__Ldarg; operand = method.Parameters[2]; break;
+					case ILCode.__Ldarg_3:   code = ILCode.__Ldarg; operand = method.Parameters[3]; break;
+					case ILCode.__Ldloc_0:   code = ILCode.Ldloc; operand = body.Variables[0]; break;
+					case ILCode.__Ldloc_1:   code = ILCode.Ldloc; operand = body.Variables[1]; break;
+					case ILCode.__Ldloc_2:   code = ILCode.Ldloc; operand = body.Variables[2]; break;
+					case ILCode.__Ldloc_3:   code = ILCode.Ldloc; operand = body.Variables[3]; break;
+					case ILCode.__Stloc_0:   code = ILCode.Stloc; operand = body.Variables[0]; break;
+					case ILCode.__Stloc_1:   code = ILCode.Stloc; operand = body.Variables[1]; break;
+					case ILCode.__Stloc_2:   code = ILCode.Stloc; operand = body.Variables[2]; break;
+					case ILCode.__Stloc_3:   code = ILCode.Stloc; operand = body.Variables[3]; break;
 					case ILCode.__Ldarg_S:   code = ILCode.__Ldarg; break;
 					case ILCode.__Ldarga_S:  code = ILCode.__Ldarga; break;
 					case ILCode.__Starg_S:   code = ILCode.__Starg; break;
@@ -448,43 +448,24 @@ namespace ICSharpCode.Decompiler.ILAst
 					case ILCode.__Ble_Un_S:  code = ILCode.__Ble_Un; break;
 					case ILCode.__Blt_Un_S:  code = ILCode.__Blt_Un; break;
 					case ILCode.__Leave_S:   code = ILCode.Leave; break;
-					case ILCode.__Ldind_I:   code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.IntPtr; break;
-					case ILCode.__Ldind_I1:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.SByte; break;
-					case ILCode.__Ldind_I2:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.Int16; break;
-					case ILCode.__Ldind_I4:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.Int32; break;
-					case ILCode.__Ldind_I8:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.Int64; break;
-					case ILCode.__Ldind_U1:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.Byte; break;
-					case ILCode.__Ldind_U2:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.UInt16; break;
-					case ILCode.__Ldind_U4:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.UInt32; break;
-					case ILCode.__Ldind_R4:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.Single; break;
-					case ILCode.__Ldind_R8:  code = ILCode.Ldobj; operand = methodBody.Method.Module.TypeSystem.Double; break;
-					case ILCode.__Stind_I:   code = ILCode.Stobj; operand = methodBody.Method.Module.TypeSystem.IntPtr; break;
-					case ILCode.__Stind_I1:  code = ILCode.Stobj; operand = methodBody.Method.Module.TypeSystem.Byte; break;
-					case ILCode.__Stind_I2:  code = ILCode.Stobj; operand = methodBody.Method.Module.TypeSystem.Int16; break;
-					case ILCode.__Stind_I4:  code = ILCode.Stobj; operand = methodBody.Method.Module.TypeSystem.Int32; break;
-					case ILCode.__Stind_I8:  code = ILCode.Stobj; operand = methodBody.Method.Module.TypeSystem.Int64; break;
-					case ILCode.__Stind_R4:  code = ILCode.Stobj; operand = methodBody.Method.Module.TypeSystem.Single; break;
-					case ILCode.__Stind_R8:  code = ILCode.Stobj; operand = methodBody.Method.Module.TypeSystem.Double; break;
+					case ILCode.__Ldind_I:   code = ILCode.Ldobj; operand = method.Module.CorLibTypes.IntPtr.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_I1:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.SByte.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_I2:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.Int16.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_I4:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.Int32.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_I8:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.Int64.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_U1:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.Byte.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_U2:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.UInt16.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_U4:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.UInt32.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_R4:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.Single.ToTypeDefOrRef(); break;
+					case ILCode.__Ldind_R8:  code = ILCode.Ldobj; operand = method.Module.CorLibTypes.Double.ToTypeDefOrRef(); break;
+					case ILCode.__Stind_I:   code = ILCode.Stobj; operand = method.Module.CorLibTypes.IntPtr.ToTypeDefOrRef(); break;
+					case ILCode.__Stind_I1:  code = ILCode.Stobj; operand = method.Module.CorLibTypes.Byte.ToTypeDefOrRef(); break;
+					case ILCode.__Stind_I2:  code = ILCode.Stobj; operand = method.Module.CorLibTypes.Int16.ToTypeDefOrRef(); break;
+					case ILCode.__Stind_I4:  code = ILCode.Stobj; operand = method.Module.CorLibTypes.Int32.ToTypeDefOrRef(); break;
+					case ILCode.__Stind_I8:  code = ILCode.Stobj; operand = method.Module.CorLibTypes.Int64.ToTypeDefOrRef(); break;
+					case ILCode.__Stind_R4:  code = ILCode.Stobj; operand = method.Module.CorLibTypes.Single.ToTypeDefOrRef(); break;
+					case ILCode.__Stind_R8:  code = ILCode.Stobj; operand = method.Module.CorLibTypes.Double.ToTypeDefOrRef(); break;
 			}
-		}
-		
-		public static ParameterDefinition GetParameter (this MethodBody self, int index)
-		{
-			var method = self.Method;
-
-			if (method.HasThis) {
-				if (index == 0)
-					return self.ThisParameter;
-
-				index--;
-			}
-
-			var parameters = method.Parameters;
-
-			if (index < 0 || index >= parameters.Count)
-				return null;
-
-			return parameters [index];
 		}
 	}
 }

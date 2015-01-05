@@ -20,7 +20,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Mono.Cecil;
+using dnlib.DotNet;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -34,7 +34,7 @@ namespace ICSharpCode.Decompiler.ILAst
 		{
 			ILVariable v, v3;
 			ILExpression newarrExpr;
-			TypeReference elementType;
+			ITypeDefOrRef elementType;
 			ILExpression lengthExpr;
 			int arrayLength;
 			if (expr.Match(ILCode.Stloc, out v, out newarrExpr) &&
@@ -43,10 +43,11 @@ namespace ICSharpCode.Decompiler.ILAst
 			    arrayLength > 0) {
 				ILExpression[] newArr;
 				int initArrayPos;
-				if (ForwardScanInitializeArrayRuntimeHelper(body, pos + 1, v, elementType, arrayLength, out newArr, out initArrayPos)) {
-					var arrayType = new ArrayType(elementType, 1);
-					arrayType.Dimensions[0] = new ArrayDimension(0, arrayLength);
-					body[pos] = new ILExpression(ILCode.Stloc, v, new ILExpression(ILCode.InitArray, arrayType, newArr));
+				if (ForwardScanInitializeArrayRuntimeHelper(body, pos + 1, v, new SZArraySig(elementType.ToTypeSig()), arrayLength, out newArr, out initArrayPos)) {
+					var arrayType = new ArraySig(elementType.ToTypeSig(), 1);
+					arrayType.LowerBounds.Add(0);
+					arrayType.Sizes.Add((uint)arrayLength);
+					body[pos] = new ILExpression(ILCode.Stloc, v, new ILExpression(ILCode.InitArray, arrayType.ToTypeDefOrRef(), newArr));
 					body.RemoveAt(initArrayPos);
 				}
 				// Put in a limit so that we don't consume too much memory if the code allocates a huge array
@@ -75,9 +76,10 @@ namespace ICSharpCode.Decompiler.ILAst
 					}
 				}
 				if (operands.Count == arrayLength) {
-					var arrayType = new ArrayType(elementType, 1);
-					arrayType.Dimensions[0] = new ArrayDimension(0, arrayLength);
-					expr.Arguments[0] = new ILExpression(ILCode.InitArray, arrayType, operands);
+					var arrayType = new ArraySig(elementType.ToTypeSig(), 1);
+					arrayType.LowerBounds.Add(0);
+					arrayType.Sizes.Add((uint)arrayLength);
+					expr.Arguments[0] = new ILExpression(ILCode.InitArray, arrayType.ToTypeDefOrRef(), operands);
 					body.RemoveRange(pos + 1, numberOfInstructionsToRemove);
 
 					new ILInlining(method).InlineIfPossible(body, ref pos);
@@ -91,20 +93,21 @@ namespace ICSharpCode.Decompiler.ILAst
 		{
 			ILVariable v;
 			ILExpression newarrExpr;
-			MethodReference ctor;
+			IMethod ctor;
 			List<ILExpression> ctorArgs;
-			ArrayType arrayType;
+			ArraySig arrayType;
 			if (expr.Match(ILCode.Stloc, out v, out newarrExpr) &&
 			    newarrExpr.Match(ILCode.Newobj, out ctor, out ctorArgs) &&
-			    (arrayType = (ctor.DeclaringType as ArrayType)) != null &&
+			    (arrayType = ctor.DeclaringType.TryGetArraySig()) != null &&
 			    arrayType.Rank == ctorArgs.Count) {
 				// Clone the type, so we can muck about with the Dimensions
-				arrayType = new ArrayType(arrayType.ElementType, arrayType.Rank);
+				arrayType = new ArraySig(arrayType.Next, arrayType.Rank);
 				var arrayLengths = new int[arrayType.Rank];
 				for (int i = 0; i < arrayType.Rank; i++) {
 					if (!ctorArgs[i].Match(ILCode.Ldc_I4, out arrayLengths[i])) return false;
 					if (arrayLengths[i] <= 0) return false;
-					arrayType.Dimensions[i] = new ArrayDimension(0, arrayLengths[i]);
+					arrayType.LowerBounds.Add(0);
+					arrayType.Sizes.Add((uint)arrayLengths[i]);
 				}
 
 				var totalElements = arrayLengths.Aggregate(1, (t, l) => t * l);
@@ -119,13 +122,13 @@ namespace ICSharpCode.Decompiler.ILAst
 			return false;
 		}
 
-		bool ForwardScanInitializeArrayRuntimeHelper(List<ILNode> body, int pos, ILVariable array, TypeReference arrayType, int arrayLength, out ILExpression[] values, out int foundPos)
+		bool ForwardScanInitializeArrayRuntimeHelper(List<ILNode> body, int pos, ILVariable array, ArraySigBase arrayType, int arrayLength, out ILExpression[] values, out int foundPos)
 		{
 			ILVariable v2;
-			MethodReference methodRef;
+			IMethod methodRef;
 			ILExpression methodArg1;
 			ILExpression methodArg2;
-			FieldReference fieldRef;
+			IField fieldRef;
 			if (body.ElementAtOrDefault(pos).Match(ILCode.Call, out methodRef, out methodArg1, out methodArg2) &&
 			    methodRef.DeclaringType.FullName == "System.Runtime.CompilerServices.RuntimeHelpers" &&
 			    methodRef.Name == "InitializeArray" &&
@@ -133,10 +136,10 @@ namespace ICSharpCode.Decompiler.ILAst
 			    array == v2 &&
 			    methodArg2.Match(ILCode.Ldtoken, out fieldRef))
 			{
-				FieldDefinition fieldDef = fieldRef.ResolveWithinSameModule();
+				FieldDef fieldDef = fieldRef.ResolveFieldWithinSameModule();
 				if (fieldDef != null && fieldDef.InitialValue != null) {
 					ILExpression[] newArr = new ILExpression[arrayLength];
-					if (DecodeArrayInitializer(arrayType.GetElementType(), fieldDef.InitialValue, newArr))
+					if (DecodeArrayInitializer(arrayType.Next, fieldDef.InitialValue, newArr))
 					{
 						values = newArr;
 						foundPos = pos;
@@ -149,7 +152,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			return false;
 		}
 
-		static bool DecodeArrayInitializer(TypeReference elementTypeRef, byte[] initialValue, ILExpression[] output)
+		static bool DecodeArrayInitializer(TypeSig elementTypeRef, byte[] initialValue, ILExpression[] output)
 		{
 			TypeCode elementType = TypeAnalysis.GetTypeCode(elementTypeRef);
 			switch (elementType) {
@@ -174,7 +177,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				case TypeCode.Double:
 					return DecodeArrayInitializer(initialValue, output, elementType, BitConverter.ToDouble);
 				case TypeCode.Object:
-					var typeDef = elementTypeRef.ResolveWithinSameModule();
+					var typeDef = elementTypeRef.ToTypeDefOrRef().ResolveWithinSameModule();
 					if (typeDef != null && typeDef.IsEnum)
 						return DecodeArrayInitializer(typeDef.GetEnumUnderlyingType(), initialValue, output);
 
@@ -257,9 +260,9 @@ namespace ICSharpCode.Decompiler.ILAst
 			Debug.Assert(body[pos] == expr); // should be called for top-level expressions only
 			ILVariable v;
 			ILExpression newObjExpr;
-			TypeReference newObjType;
+			ITypeDefOrRef newObjType;
 			bool isValueType;
-			MethodReference ctor;
+			IMethod ctor;
 			List<ILExpression> ctorArgs;
 			if (expr.Match(ILCode.Stloc, out v, out newObjExpr)) {
 				if (newObjExpr.Match(ILCode.Newobj, out ctor, out ctorArgs)) {
@@ -353,15 +356,15 @@ namespace ICSharpCode.Decompiler.ILAst
 		/// <summary>
 		/// Gets whether the type supports collection initializers.
 		/// </summary>
-		static bool IsCollectionType(TypeReference tr)
+		static bool IsCollectionType(ITypeDefOrRef tr)
 		{
 			if (tr == null)
 				return false;
-			TypeDefinition td = tr.Resolve();
+			TypeDef td = tr.ResolveTypeDef();
 			while (td != null) {
-				if (td.Interfaces.Any(intf => intf.Name == "IEnumerable" && intf.Namespace == "System.Collections"))
+				if (td.Interfaces.Any(intf => intf.Interface.Name == "IEnumerable" && intf.Interface.Namespace == "System.Collections"))
 					return true;
-				td = td.BaseType != null ? td.BaseType.Resolve() : null;
+				td = td.BaseType != null ? td.BaseType.ResolveTypeDef() : null;
 			}
 			return false;
 		}
@@ -385,10 +388,10 @@ namespace ICSharpCode.Decompiler.ILAst
 		/// </summary>
 		static bool IsAddMethodCall(ILExpression expr)
 		{
-			MethodReference addMethod;
+			IMethod addMethod;
 			List<ILExpression> args;
 			if (expr.Match(ILCode.Callvirt, out addMethod, out args) || expr.Match(ILCode.Call, out addMethod, out args)) {
-				if (addMethod.Name == "Add" && addMethod.HasThis) {
+				if (addMethod.Name == "Add" && addMethod.MethodSig.HasThis) {
 					return args.Count >= 2;
 				}
 			}
@@ -471,15 +474,16 @@ namespace ICSharpCode.Decompiler.ILAst
 			// Now create new initializers for the remaining arguments:
 			for (; i <= getters.Count; i++) {
 				ILExpression g = getters[getters.Count - i];
-				MemberReference mr = (MemberReference)g.Operand;
-				TypeReference returnType;
-				if (mr is FieldReference)
-					returnType = TypeAnalysis.GetFieldType((FieldReference)mr);
+				IMemberRef mr = (IMemberRef)g.Operand;
+				TypeSig returnType;
+				if (dnlibExtensions.IsField(mr))
+					returnType = TypeAnalysis.GetFieldType((IField)mr);
 				else
-					returnType = TypeAnalysis.SubstituteTypeArgs(((MethodReference)mr).ReturnType, mr);
+					returnType = TypeAnalysis.SubstituteTypeArgs(((IMethod)mr).MethodSig.RetType, 
+						mr.DeclaringType.ToTypeSig(), (IMethod)mr);
 
 				ILExpression nestedInitializer = new ILExpression(
-					IsCollectionType(returnType) ? ILCode.InitCollection : ILCode.InitObject,
+					IsCollectionType(returnType.ToTypeDefOrRef()) ? ILCode.InitCollection : ILCode.InitObject,
 					null, g);
 				// add new initializer to its parent:
 				ILExpression parentInitializer = initializerStack[initializerStack.Count - 1];

@@ -20,7 +20,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Mono.Cecil;
+using dnlib.DotNet;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -133,22 +133,22 @@ namespace ICSharpCode.Decompiler.ILAst
 	class StateRangeAnalysis
 	{
 		readonly StateRangeAnalysisMode mode;
-		readonly FieldDefinition stateField;
+		readonly FieldDef stateField;
 		internal DefaultDictionary<ILNode, StateRange> ranges;
 		SymbolicEvaluationContext evalContext;
 		
-		internal Dictionary<MethodDefinition, StateRange> finallyMethodToStateRange; // used only for IteratorDispose
+		internal Dictionary<MethodDef, StateRange> finallyMethodToStateRange; // used only for IteratorDispose
 		
 		/// <summary>
 		/// Initializes the state range logic:
 		/// Clears 'ranges' and sets 'ranges[entryPoint]' to the full range (int.MinValue to int.MaxValue)
 		/// </summary>
-		public StateRangeAnalysis(ILNode entryPoint, StateRangeAnalysisMode mode, FieldDefinition stateField, ILVariable cachedStateVar = null)
+		public StateRangeAnalysis(ILNode entryPoint, StateRangeAnalysisMode mode, FieldDef stateField, ILVariable cachedStateVar = null)
 		{
 			this.mode = mode;
 			this.stateField = stateField;
 			if (mode == StateRangeAnalysisMode.IteratorDispose) {
-				finallyMethodToStateRange = new Dictionary<MethodDefinition, StateRange>();
+				finallyMethodToStateRange = new Dictionary<MethodDef, StateRange>();
 			}
 			
 			ranges = new DefaultDictionary<ILNode, StateRange>(n => new StateRange());
@@ -250,7 +250,7 @@ namespace ICSharpCode.Decompiler.ILAst
 					case ILCode.Call:
 						// in some cases (e.g. foreach over array) the C# compiler produces a finally method outside of try-finally blocks
 						if (mode == StateRangeAnalysisMode.IteratorDispose) {
-							MethodDefinition mdef = (expr.Operand as MethodReference).ResolveWithinSameModule();
+							MethodDef mdef = (expr.Operand as IMethod).ResolveMethodWithinSameModule();
 							if (mdef == null || finallyMethodToStateRange.ContainsKey(mdef))
 								throw new SymbolicAnalysisFailedException();
 							finallyMethodToStateRange.Add(mdef, nodeRange);

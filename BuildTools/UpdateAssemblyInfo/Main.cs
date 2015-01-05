@@ -19,22 +19,14 @@ namespace UpdateAssemblyInfo
 	// Updates the version numbers in the assembly information.
 	class MainClass
 	{
-		const string BaseCommit = "d779383cb85003d6dabeb976f0845631e07bf463";
+		const string BaseCommit = "510f657a7715158a7fc5ba21d9d72ba6e2e5464d";
 		const int BaseCommitRev = 1;
 		
-		const string globalAssemblyInfoTemplateFile = "ILSpy/Properties/AssemblyInfo.template.cs";
+		const string globalAssemblyInfoTemplateFile = "ICSharpCode.Decompiler/Properties/AssemblyInfo.template.cs";
 		static readonly TemplateFile[] templateFiles = {
 			new TemplateFile {
 				Input = globalAssemblyInfoTemplateFile,
-				Output = "ILSpy/Properties/AssemblyInfo.cs"
-			},
-			new TemplateFile {
-				Input = "ICSharpCode.Decompiler/Properties/AssemblyInfo.template.cs",
 				Output = "ICSharpCode.Decompiler/Properties/AssemblyInfo.cs"
-			},
-			new TemplateFile {
-				Input = "ILSpy/Properties/app.config.template",
-				Output = "ILSpy/app.config"
 			}
 		};
 		
@@ -58,14 +50,14 @@ namespace UpdateAssemblyInfo
 						}
 						return 0;
 					}
-					if (!File.Exists("ILSpy.sln")) {
+					if (!File.Exists("ICSharpCode.Decompiler.sln")) {
 						string mainDir = Path.GetFullPath(Path.Combine(exeDir, "../../../.."));
-						if (File.Exists(Path.Combine(mainDir, "ILSpy.sln"))) {
+						if (File.Exists(Path.Combine(mainDir, "ICSharpCode.Decompiler.sln"))) {
 							Directory.SetCurrentDirectory(mainDir);
 						}
 					}
-					if (!File.Exists("ILSpy.sln")) {
-						Console.WriteLine("Working directory must be the ILSpy repo root!");
+					if (!File.Exists("ICSharpCode.Decompiler.sln")) {
+						Console.WriteLine("Working directory must be the ICSharpCode.Decompiler repo root!");
 						return 2;
 					}
 					RetrieveRevisionNumber();
@@ -194,7 +186,7 @@ namespace UpdateAssemblyInfo
 		static void RetrieveRevisionNumber()
 		{
 			if (revisionNumber == null) {
-				if (Directory.Exists(".git")) {
+				if (Directory.Exists(".git") || File.Exists(".git")) {
 					try {
 						ReadRevisionNumberFromGit();
 						ReadBranchNameFromGit();

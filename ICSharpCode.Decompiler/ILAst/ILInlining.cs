@@ -20,7 +20,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Mono.Cecil;
+using dnlib.DotNet;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -294,7 +294,7 @@ namespace ICSharpCode.Decompiler.ILAst
 					case ILCode.Ldsfld:
 					case ILCode.Stsfld:
 						// allow inlining field access only if it's a readonly field
-						FieldDefinition f = ((FieldReference)inlinedExpression.Operand).Resolve();
+						var f = ((IField)inlinedExpression.Operand).ResolveFieldDef();
 						if (!(f != null && f.IsInitOnly))
 							return false;
 						break;
@@ -302,16 +302,16 @@ namespace ICSharpCode.Decompiler.ILAst
 					case ILCode.CallGetter:
 						// inlining runs both before and after IntroducePropertyAccessInstructions,
 						// so we have to handle both 'call' and 'callgetter'
-						MethodReference mr = (MethodReference)inlinedExpression.Operand;
+						IMethod mr = (IMethod)inlinedExpression.Operand;
 						// ensure that it's not an multi-dimensional array getter
-						if (mr.DeclaringType is ArrayType)
+						if (mr.DeclaringType.TryGetArraySig() != null)
 							return false;
 						goto case ILCode.Callvirt;
 					case ILCode.Callvirt:
 					case ILCode.CallvirtGetter:
 						// don't inline foreach loop variables:
-						mr = (MethodReference)inlinedExpression.Operand;
-						if (mr.Name == "get_Current" && mr.HasThis)
+						mr = (IMethod)inlinedExpression.Operand;
+						if (mr.Name == "get_Current" && mr.MethodSig.HasThis)
 							return false;
 						break;
 					case ILCode.Castclass:
@@ -319,8 +319,8 @@ namespace ICSharpCode.Decompiler.ILAst
 						// These are valid, but might occur as part of a foreach loop variable.
 						ILExpression arg = inlinedExpression.Arguments[0];
 						if (arg.Code == ILCode.CallGetter || arg.Code == ILCode.CallvirtGetter || arg.Code == ILCode.Call || arg.Code == ILCode.Callvirt) {
-							mr = (MethodReference)arg.Operand;
-							if (mr.Name == "get_Current" && mr.HasThis)
+							mr = (IMethod)arg.Operand;
+							if (mr.Name == "get_Current" && mr.MethodSig.HasThis)
 								return false; // looks like a foreach loop variable, so don't inline it
 						}
 						break;
@@ -334,8 +334,8 @@ namespace ICSharpCode.Decompiler.ILAst
 					case ILCode.Callvirt:
 					case ILCode.CallvirtGetter:
 					case ILCode.CallvirtSetter:
-						MethodReference mr = (MethodReference)parent.Operand;
-						return mr.HasThis;
+						IMethod mr = (IMethod)parent.Operand;
+						return mr.MethodSig.HasThis;
 					case ILCode.Stfld:
 					case ILCode.Ldfld:
 					case ILCode.Ldflda:

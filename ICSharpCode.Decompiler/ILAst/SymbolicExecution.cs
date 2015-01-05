@@ -19,7 +19,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Mono.Cecil;
+using dnlib.DotNet;
 
 namespace ICSharpCode.Decompiler.ILAst
 {
@@ -85,10 +85,10 @@ namespace ICSharpCode.Decompiler.ILAst
 	
 	class SymbolicEvaluationContext
 	{
-		readonly FieldDefinition stateField;
+		readonly FieldDef stateField;
 		readonly List<ILVariable> stateVariables = new List<ILVariable>();
 		
-		public SymbolicEvaluationContext(FieldDefinition stateField)
+		public SymbolicEvaluationContext(FieldDef stateField)
 		{
 			this.stateField = stateField;
 		}
@@ -119,7 +119,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				case ILCode.Ldfld:
 					if (Eval(expr.Arguments[0]).Type != SymbolicValueType.This)
 						return Failed();
-					if (CecilExtensions.ResolveWithinSameModule(expr.Operand as FieldReference) != stateField)
+					if (dnlibExtensions.ResolveFieldWithinSameModule(expr.Operand as IField) != stateField)
 						return Failed();
 					return new SymbolicValue(SymbolicValueType.State);
 				case ILCode.Ldloc:

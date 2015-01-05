@@ -132,7 +132,6 @@
     <Compile Include="TypeSystem\AnonymousType.cs" />
     <Compile Include="TypeSystem\ArrayType.cs" />
     <Compile Include="TypeSystem\ByReferenceType.cs" />
-    <Compile Include="TypeSystem\CecilLoader.cs" />
     <Compile Include="TypeSystem\ComHelper.cs" />
     <Compile Include="TypeSystem\DefaultSolutionSnapshot.cs" />
     <Compile Include="TypeSystem\DomRegion.cs" />
@@ -264,17 +263,7 @@
     <Compile Include="Utils\CompositeFormatStringParser\IFormatStringError.cs" />
     <Compile Include="Completion\CompletionExtensionMethods.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Completion\" />
-    <Folder Include="TypeSystem\" />
-    <Folder Include="Utils\CompositeFormatStringParser\" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\Mono.Cecil\Mono.Cecil.csproj">
-      <Project>{D68133BD-1E63-496E-9EDE-4FBDBF77B486}</Project>
-      <Name>Mono.Cecil</Name>
-    </ProjectReference>
-  </ItemGroup>
+  <ItemGroup />
   <ItemGroup>
     <None Include="..\doc\Pattern Matching.html">
       <Link>PatternMatching\Pattern Matching.html</Link>
@@ -282,6 +271,12 @@
     <None Include="..\doc\XML Documentation.html">
       <Link>Documentation\XML Documentation.html</Link>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\dnlib\src\dnlib.csproj">
+      <Project>{FDFC1237-143F-4919-8318-4926901F4639}</Project>
+      <Name>dnlib</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
 </Project>

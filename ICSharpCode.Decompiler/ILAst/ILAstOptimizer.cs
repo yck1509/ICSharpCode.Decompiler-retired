@@ -22,8 +22,8 @@ using System.Diagnostics;
 using System.Linq;
 using ICSharpCode.Decompiler.FlowAnalysis;
 using ICSharpCode.NRefactory.Utils;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
+using dnlib.DotNet;
+using dnlib.DotNet.Emit;
 using Mono.CSharp;
 
 namespace ICSharpCode.Decompiler.ILAst
@@ -79,13 +79,13 @@ namespace ICSharpCode.Decompiler.ILAst
 		int nextLabelIndex = 0;
 		
 		DecompilerContext context;
-		TypeSystem typeSystem;
+		ICorLibTypes typeSystem;
 		ILBlock method;
 		
 		public void Optimize(DecompilerContext context, ILBlock method, ILAstOptimizationStep abortBeforeStep = ILAstOptimizationStep.None)
 		{
 			this.context = context;
-			this.typeSystem = context.CurrentMethod.Module.TypeSystem;
+			this.typeSystem = context.CurrentMethod.Module.CorLibTypes;
 			this.method = method;
 			
 			if (abortBeforeStep == ILAstOptimizationStep.RemoveRedundantCode) return;
@@ -395,9 +395,10 @@ namespace ICSharpCode.Decompiler.ILAst
 		void IntroducePropertyAccessInstructions(ILExpression expr, ILExpression parentExpr, int posInParent)
 		{
 			if (expr.Code == ILCode.Call || expr.Code == ILCode.Callvirt) {
-				MethodReference cecilMethod = (MethodReference)expr.Operand;
-				if (cecilMethod.DeclaringType is ArrayType) {
-					switch (cecilMethod.Name) {
+				MemberRef method = (MemberRef)expr.Operand;
+				if (method.DeclaringType.TryGetArraySig() != null ||
+					method.DeclaringType.TryGetSZArraySig() != null) {
+					switch (method.Name) {
 						case "Get":
 							expr.Code = ILCode.CallGetter;
 							break;
@@ -405,12 +406,11 @@ namespace ICSharpCode.Decompiler.ILAst
 							expr.Code = ILCode.CallSetter;
 							break;
 						case "Address":
-							ByReferenceType brt = cecilMethod.ReturnType as ByReferenceType;
+							var brt = method.MethodSig.RetType as ByRefSig;
 							if (brt != null) {
-								MethodReference getMethod = new MethodReference("Get", brt.ElementType, cecilMethod.DeclaringType);
-								foreach (var p in cecilMethod.Parameters)
-									getMethod.Parameters.Add(p);
-								getMethod.HasThis = cecilMethod.HasThis;
+								MemberRef getMethod = new MemberRefUser(method.Module, "Get", 
+									MethodSig.CreateInstance(brt.Next, method.MethodSig.Params.ToArray()), 
+									method.DeclaringType);
 								expr.Operand = getMethod;
 							}
 							expr.Code = ILCode.CallGetter;
@@ -420,11 +420,11 @@ namespace ICSharpCode.Decompiler.ILAst
 							break;
 					}
 				} else {
-					MethodDefinition cecilMethodDef = cecilMethod.Resolve();
-					if (cecilMethodDef != null) {
-						if (cecilMethodDef.IsGetter)
+					MethodDef methodDef = method.ResolveMethod();
+					if (methodDef != null) {
+						if (methodDef.IsGetter)
 							expr.Code = (expr.Code == ILCode.Call) ? ILCode.CallGetter : ILCode.CallvirtGetter;
-						else if (cecilMethodDef.IsSetter)
+						else if (methodDef.IsSetter)
 							expr.Code = (expr.Code == ILCode.Call) ? ILCode.CallSetter : ILCode.CallvirtSetter;
 					}
 				}
@@ -650,7 +650,7 @@ namespace ICSharpCode.Decompiler.ILAst
 			// Recombine variables that were split when the ILAst was created
 			// This ensures that a single IL variable is a single C# variable (gets assigned only one name)
 			// The DeclareVariables transformation might then split up the C# variable again if it is used indendently in two separate scopes.
-			Dictionary<VariableDefinition, ILVariable> dict = new Dictionary<VariableDefinition, ILVariable>();
+			Dictionary<Local, ILVariable> dict = new Dictionary<Local, ILVariable>();
 			ReplaceVariables(
 				method,
 				delegate(ILVariable v) {
@@ -687,7 +687,7 @@ namespace ICSharpCode.Decompiler.ILAst
 		
 		void ReportUnassignedILRanges(ILBlock method)
 		{
-			var unassigned = ILRange.Invert(method.GetSelfAndChildrenRecursive<ILExpression>().SelectMany(e => e.ILRanges), context.CurrentMethod.Body.CodeSize).ToList();
+			var unassigned = ILRange.Invert(method.GetSelfAndChildrenRecursive<ILExpression>().SelectMany(e => e.ILRanges), context.CurrentMethod.Body.GetCodeSize()).ToList();
 			if (unassigned.Count > 0)
 				Debug.WriteLine(string.Format("Unassigned ILRanges for {0}.{1}: {2}", this.context.CurrentMethod.DeclaringType.Name, this.context.CurrentMethod.Name, string.Join(", ", unassigned.Select(r => r.ToString()))));
 		}
@@ -809,7 +809,7 @@ namespace ICSharpCode.Decompiler.ILAst
 				case ILCode.Call:
 				case ILCode.Callvirt:
 					// property getters can't be expression statements, but all other method calls can be
-					MethodReference mr = (MethodReference)expr.Operand;
+					IMethod mr = (IMethod)expr.Operand;
 					return !mr.Name.StartsWith("get_", StringComparison.Ordinal);
 				case ILCode.CallSetter:
 				case ILCode.CallvirtSetter:
