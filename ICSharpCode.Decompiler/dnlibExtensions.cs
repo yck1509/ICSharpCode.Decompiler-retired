@@ -300,7 +300,7 @@ namespace ICSharpCode.Decompiler
 
 		public static bool HasReturnValue(this MethodDef method) {
 			return method != null && method.ReturnType != null &&
-				method.ReturnType.RemovePinnedAndModifiers().ElementType == ElementType.Void;
+				method.ReturnType.RemovePinnedAndModifiers().ElementType != ElementType.Void;
 		}
 
 		public static bool IsCorLibType(this ITypeDefOrRef type, string @namespace, string name) {

@@ -395,7 +395,7 @@ namespace ICSharpCode.Decompiler.ILAst
 		void IntroducePropertyAccessInstructions(ILExpression expr, ILExpression parentExpr, int posInParent)
 		{
 			if (expr.Code == ILCode.Call || expr.Code == ILCode.Callvirt) {
-				MemberRef method = (MemberRef)expr.Operand;
+				IMethod method = (IMethod)expr.Operand;
 				if (method.DeclaringType.TryGetArraySig() != null ||
 					method.DeclaringType.TryGetSZArraySig() != null) {
 					switch (method.Name) {
@@ -420,7 +420,7 @@ namespace ICSharpCode.Decompiler.ILAst
 							break;
 					}
 				} else {
-					MethodDef methodDef = method.ResolveMethod();
+					MethodDef methodDef = method.ResolveMethodDef();
 					if (methodDef != null) {
 						if (methodDef.IsGetter)
 							expr.Code = (expr.Code == ILCode.Call) ? ILCode.CallGetter : ILCode.CallvirtGetter;

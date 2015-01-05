@@ -506,6 +506,12 @@ namespace ICSharpCode.Decompiler.Ast
 		
 		static AstType ConvertType(ITypeDefOrRef type, IHasCustomAttribute typeAttributes, ref int typeIndex, ConvertTypeOptions options)
 		{
+			if (type == null) {
+				return AstType.Null;
+			} else if (type is TypeSpec) {
+				return ConvertType(((TypeSpec)type).TypeSig, typeAttributes, ref typeIndex, options);
+			}
+
 			if (type.DeclaringType != null) {
 				AstType typeRef = ConvertType(type.DeclaringType, typeAttributes, ref typeIndex, options & ~ConvertTypeOptions.IncludeTypeParameterDefinitions);
 				string namepart = ICSharpCode.NRefactory.TypeSystem.ReflectionHelper.SplitTypeParameterCountFromReflectionName(type.Name);
@@ -1375,6 +1381,9 @@ namespace ICSharpCode.Decompiler.Ast
 		
 		static void ConvertCustomAttributes(AstNode attributedNode, IHasCustomAttribute customAttributeProvider, string attributeTarget = null)
 		{
+			if (customAttributeProvider == null)
+				return;
+
 			EntityDeclaration entityDecl = attributedNode as EntityDeclaration;
 			if (customAttributeProvider.HasCustomAttributes) {
 				var attributes = new List<ICSharpCode.NRefactory.CSharp.Attribute>();

@@ -372,7 +372,7 @@ namespace ICSharpCode.Decompiler.Ast
 						var ace = new ArrayCreateExpression();
 						ace.Type = operandAsTypeRef;
 						ComposedType ct = operandAsTypeRef as ComposedType;
-						var arrayType = (ArraySigBase) operand;
+						var arrayType = (ArraySigBase)((ITypeDefOrRef)operand).ToTypeSig(); ;
 						if (ct != null)
 						{
 							// change "new (int[,])[10] to new int[10][,]"
@@ -768,7 +768,6 @@ namespace ICSharpCode.Decompiler.Ast
 						oce.Arguments.AddRange(args);
 						return oce.WithAnnotation(operand);
 					}
-					case ILCode.No: return InlineAssembly(byteCode, args);
 					case ILCode.Nop: return null;
 					case ILCode.Pop: return arg1;
 					case ILCode.Readonly: return InlineAssembly(byteCode, args);

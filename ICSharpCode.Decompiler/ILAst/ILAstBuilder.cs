@@ -250,7 +250,7 @@ namespace ICSharpCode.Decompiler.ILAst
 					EndOffset   = next != null ? next.Offset : methodDef.Body.GetCodeSize(),
 					Code        = code,
 					Operand     = operand,
-					PopCount    = pops,
+					PopCount    = pops == -1 ? (int?)null : pops,
 					PushCount   = pushes
 				};
 				if (prefixes != null) {
