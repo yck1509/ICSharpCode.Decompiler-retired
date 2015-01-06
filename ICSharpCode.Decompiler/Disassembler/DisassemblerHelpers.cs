@@ -47,7 +47,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 	{
 		public static void WriteOffsetReference(ITextOutput writer, Instruction instruction)
 		{
-			writer.WriteReference(dnlibExtensions.OffsetToString(instruction.Offset), instruction);
+			writer.WriteReference(dnlibExtensions.OffsetToString(instruction.Offset), instruction, true);
 		}
 		
 		public static void WriteTo(this ExceptionHandler exceptionHandler, ITextOutput writer)
@@ -75,16 +75,16 @@ namespace ICSharpCode.Decompiler.Disassembler
 		
 		public static void WriteTo(this Instruction instruction, ITextOutput writer)
 		{
-			writer.WriteDefinition(dnlibExtensions.OffsetToString(instruction.Offset), instruction);
+			writer.WriteDefinition(dnlibExtensions.OffsetToString(instruction.Offset), instruction, true);
 			writer.Write(": ");
-			writer.WriteReference(instruction.OpCode.Name, instruction.OpCode);
+			writer.WriteReference(instruction.OpCode.Name, instruction.OpCode, true);
 			if (instruction.Operand != null) {
 				writer.Write(' ');
 				if (instruction.OpCode == OpCodes.Ldtoken) {
 					if (dnlibExtensions.IsMethod(instruction.Operand))
-						writer.Write("method ");
+						writer.WriteKeyword("method ");
 					else if (dnlibExtensions.IsField(instruction.Operand))
-						writer.Write("field ");
+						writer.WriteKeyword("field ");
 				}
 				WriteOperand(writer, instruction.Operand);
 			}
@@ -116,10 +116,10 @@ namespace ICSharpCode.Decompiler.Disassembler
 		public static void WriteTo(this MethodSig signature, IMethod method, ITextOutput writer)
 		{
 			if (signature.ExplicitThis) {
-				writer.Write("instance explicit ");
+				writer.WriteKeyword("instance explicit ");
 			}
 			else if (signature.HasThis) {
-				writer.Write("instance ");
+				writer.WriteKeyword("instance ");
 			}
 			signature.RetType.WriteTo(writer, ILNameSyntax.SignatureNoNamedTypeParameters);
 			writer.Write(' ');
@@ -151,7 +151,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 				if (i > 0) writer.Write(", ");
 				signature.Params[i].WriteTo(writer, ILNameSyntax.SignatureNoNamedTypeParameters);
 			}
-			if (signature.ParamsAfterSentinel.Count > 0) {
+			if (signature.ParamsAfterSentinel != null && signature.ParamsAfterSentinel.Count > 0) {
 				if (signature.Params.Count > 0)
 					writer.Write(", ");
 
@@ -228,7 +228,8 @@ namespace ICSharpCode.Decompiler.Disassembler
 		{
 			HashSet<string> s = new HashSet<string>(keywords);
 			foreach (var field in typeof(OpCodes).GetFields()) {
-				s.Add(((OpCode)field.GetValue(null)).Name);
+				if (field.FieldType == typeof(OpCode))
+					s.Add(((OpCode)field.GetValue(null)).Name);
 			}
 			return s;
 		}
@@ -249,7 +250,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			ILNameSyntax syntaxForElementTypes = syntax == ILNameSyntax.SignatureNoNamedTypeParameters ? syntax : ILNameSyntax.Signature;
 			if (type is PinnedSig) {
 				type.Next.WriteTo(writer, syntaxForElementTypes);
-				writer.Write(" pinned");
+				writer.WriteKeyword(" pinned");
 			} else if (type is SZArraySig) {
 				type.Next.WriteTo(writer, syntaxForElementTypes);
 				writer.Write("[]");
@@ -279,7 +280,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 				var genericParam = ((GenericSig)type).GenericParam;
 				if (genericParam == null || string.IsNullOrEmpty(genericParam.Name) ||
 					syntax == ILNameSyntax.SignatureNoNamedTypeParameters)
-					writer.Write(genericParam.Number.ToString());
+					writer.Write(((GenericSig)type).Number.ToString());
 				else
 					writer.Write(Escape(genericParam.Name));
 			} else if (type is ByRefSig) {
@@ -289,7 +290,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 				type.Next.WriteTo(writer, syntaxForElementTypes);
 				writer.Write('*');
 			} else if (type is GenericInstSig) {
-				type.Next.WriteTo(writer, syntaxForElementTypes);
+				((GenericInstSig)type).GenericType.WriteTo(writer, syntaxForElementTypes);
 				writer.Write('<');
 				var arguments = ((GenericInstSig)type).GenericArguments;
 				for (int i = 0; i < arguments.Count; i++) {
@@ -300,24 +301,24 @@ namespace ICSharpCode.Decompiler.Disassembler
 				writer.Write('>');
 			} else if (type is CModOptSig) {
 				type.Next.WriteTo(writer, syntax);
-				writer.Write(" modopt(");
+				writer.WriteKeyword(" modopt(");
 				((CModOptSig)type).Modifier.WriteTo(writer, ILNameSyntax.TypeName);
-				writer.Write(") ");
+				writer.WriteKeyword(") ");
 			} else if (type is CModReqdSig) {
 				type.Next.WriteTo(writer, syntax);
-				writer.Write(" modreq(");
+				writer.WriteKeyword(" modreq(");
 				((CModReqdSig)type).Modifier.WriteTo(writer, ILNameSyntax.TypeName);
-				writer.Write(") ");
+				writer.WriteKeyword(") ");
 			} else if (type is ValueArraySig) {
 				type.Next.WriteTo(writer, syntax);
-				writer.Write(" ValueArray(");
+				writer.WriteKeyword(" ValueArray(");
 				writer.Write(((ValueArraySig)type).Size.ToString());
-				writer.Write(") ");
+				writer.WriteKeyword(") ");
 			} else if (type is ModuleSig) {
 				type.Next.WriteTo(writer, syntax);
-				writer.Write(" Module(");
+				writer.WriteKeyword(" Module(");
 				writer.Write(((ModuleSig)type).Index.ToString());
-				writer.Write(") ");
+				writer.WriteKeyword(") ");
 			} else if (type is FnPtrSig) {
 				((FnPtrSig)type).MethodSig.WriteTo(null, writer);
 			} else if (type is TypeDefOrRefSig) {
@@ -335,16 +336,16 @@ namespace ICSharpCode.Decompiler.Disassembler
 			string name = PrimitiveTypeName(type.FullName);
 			if (syntax == ILNameSyntax.ShortTypeName) {
 				if (name != null)
-					writer.Write(name);
+					writer.WriteKeyword(name);
 				else
 					writer.WriteReference(Escape(type.Name), type);
 			}
 			else if ((syntax == ILNameSyntax.Signature || syntax == ILNameSyntax.SignatureNoNamedTypeParameters) && name != null) {
-				writer.Write(name);
+				writer.WriteKeyword(name);
 			}
 			else {
 				if (syntax == ILNameSyntax.Signature || syntax == ILNameSyntax.SignatureNoNamedTypeParameters)
-					writer.Write(type.IsValueType ? "valuetype " : "class ");
+					writer.WriteKeyword(type.IsValueType ? "valuetype " : "class ");
 
 				if (type.DeclaringType != null) {
 					type.DeclaringType.WriteTo(writer, ILNameSyntax.TypeName);
@@ -352,8 +353,20 @@ namespace ICSharpCode.Decompiler.Disassembler
 					writer.WriteReference(Escape(type.Name), type);
 				}
 				else {
-					if (!(type is TypeDef) && type.Scope != null)
-						writer.Write("[{0}]", Escape(type.Scope.ScopeName));
+					if (!(type is TypeDef) && type.Scope != null) {
+						IAssembly assembly;
+						if (type.Scope is IAssembly)
+							assembly = (IAssembly)type.Scope;
+						else if (type.Scope is ModuleRef)
+							assembly = ((ModuleRef)type.Scope).DefinitionAssembly;
+						else if (type.Scope is ModuleDef)
+							assembly = ((ModuleDef)type.Scope).Assembly;
+						else
+							throw new NotSupportedException();
+						writer.Write("[");
+						writer.WriteReference(Escape(assembly.Name), assembly);
+						writer.Write("]");
+					}
 					writer.WriteReference(Escape(type.FullName), type);
 				}
 			}
@@ -379,18 +392,18 @@ namespace ICSharpCode.Decompiler.Disassembler
 			Local local = operand as Local;
 			if (local != null) {
 				if (string.IsNullOrEmpty(local.Name))
-					writer.WriteReference(local.Index.ToString(), local);
+					writer.WriteReference(local.Index.ToString(), local, true);
 				else
-					writer.WriteReference(Escape(local.Name), local);
+					writer.WriteReference(Escape(local.Name), local, true);
 				return;
 			}
 			
 			Parameter param = operand as Parameter;
 			if (param != null) {
 				if (string.IsNullOrEmpty(param.Name))
-					writer.WriteReference(param.Index.ToString(), param);
+					writer.WriteReference(param.Index.ToString(), param, true);
 				else
-					writer.WriteReference(Escape(param.Name), param);
+					writer.WriteReference(Escape(param.Name), param, true);
 				return;
 			}
 			
@@ -407,61 +420,61 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 
 			IField fieldRef = operand as IField;
-			if (fieldRef != null && dnlibExtensions.IsMethod(fieldRef)) {
+			if (fieldRef != null && dnlibExtensions.IsField(fieldRef)) {
 				fieldRef.WriteTo(writer);
 				return;
 			}
 			
 			string s = operand as string;
 			if (s != null) {
-				writer.Write("\"" + NRefactory.CSharp.CSharpOutputVisitor.ConvertString(s) + "\"");
+				writer.WriteLiteral("\"" + NRefactory.CSharp.CSharpOutputVisitor.ConvertString(s) + "\"");
 			} else if (operand is char) {
-				writer.Write(((int)(char)operand).ToString());
+				writer.WriteLiteral(((int)(char)operand).ToString());
 			} else if (operand is float) {
 				float val = (float)operand;
 				if (val == 0) {
 					if (1 / val == float.NegativeInfinity) {
 						// negative zero is a special case
-						writer.Write('-');
+						writer.WriteLiteral("-");
 					}
-					writer.Write("0.0");
+					writer.WriteLiteral("0.0");
 				} else if (float.IsInfinity(val) || float.IsNaN(val)) {
 					byte[] data = BitConverter.GetBytes(val);
 					writer.Write('(');
 					for (int i = 0; i < data.Length; i++) {
 						if (i > 0)
-							writer.Write(' ');
-						writer.Write(data[i].ToString("X2"));
+							writer.WriteLiteral(" ");
+						writer.WriteLiteral(data[i].ToString("X2"));
 					}
 					writer.Write(')');
 				} else {
-					writer.Write(val.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+					writer.WriteLiteral(val.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
 				}
 			} else if (operand is double) {
 				double val = (double)operand;
 				if (val == 0) {
 					if (1 / val == double.NegativeInfinity) {
 						// negative zero is a special case
-						writer.Write('-');
+						writer.WriteLiteral("-");
 					}
-					writer.Write("0.0");
+					writer.WriteLiteral("0.0");
 				} else if (double.IsInfinity(val) || double.IsNaN(val)) {
 					byte[] data = BitConverter.GetBytes(val);
 					writer.Write('(');
 					for (int i = 0; i < data.Length; i++) {
 						if (i > 0)
-							writer.Write(' ');
-						writer.Write(data[i].ToString("X2"));
+							writer.WriteLiteral(" ");
+						writer.WriteLiteral(data[i].ToString("X2"));
 					}
 					writer.Write(')');
 				} else {
-					writer.Write(val.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+					writer.WriteLiteral(val.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
 				}
 			} else if (operand is bool) {
-				writer.Write((bool)operand ? "true" : "false");
+				writer.WriteLiteral((bool)operand ? "true" : "false");
 			} else {
 				s = ToInvariantCultureString(operand);
-				writer.Write(s);
+				writer.WriteLiteral(s);
 			}
 		}
 		

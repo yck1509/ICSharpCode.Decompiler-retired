@@ -50,21 +50,25 @@ namespace ICSharpCode.Decompiler.Disassembler
 		public void Disassemble(MethodDef method, CilBody body, MemberMapping methodMapping)
 		{
 			// start writing IL code
-			output.WriteLine("// Method Token is 0x{0:x4}", method.MDToken.Raw);
-			output.WriteLine("// Method begins at RVA 0x{0:x4}", method.RVA);
-			output.WriteLine("// Code size {0} (0x{0:x})", body.GetCodeSize());
-			output.WriteLine(".maxstack {0}", body.MaxStack);
-            if (method.DeclaringType.Module.Assembly != null && method.DeclaringType.Module.EntryPoint == method)
-                output.WriteLine (".entrypoint");
+			output.WriteLineComment("// Method Token is 0x{0:x8}", method.MDToken.Raw);
+			output.WriteLineComment("// Method begins at RVA 0x{0:x}", method.RVA);
+			output.WriteLineComment("// Code size {0} (0x{0:x})", body.GetCodeSize());
+			output.WriteKeyword(".maxstack ");
+			output.WriteLiteral(body.MaxStack.ToString());
+			output.WriteLine();
+			if (method.DeclaringType.Module.Assembly != null && method.DeclaringType.Module.EntryPoint == method) {
+				output.WriteKeyword(".entrypoint");
+				output.WriteLine();
+			}
 			
 			if (method.Body.HasVariables) {
-				output.Write(".locals ");
+				output.WriteKeyword(".locals ");
 				if (method.Body.InitLocals)
-					output.Write("init ");
+					output.WriteKeyword("init ");
 				output.WriteLine("(");
 				output.Indent();
 				foreach (var v in method.Body.Variables) {
-					output.WriteDefinition("[" + v.Index + "] ", v);
+					output.WriteDefinition("[" + v.Index + "] ", v, true);
 					v.Type.WriteTo(output);
 					if (!string.IsNullOrEmpty(v.Name)) {
 						output.Write(' ');
@@ -131,23 +135,24 @@ namespace ICSharpCode.Decompiler.Disassembler
 		{
 			switch (s.Type) {
 				case ILStructureType.Loop:
-					output.Write("// loop start");
+					output.WriteComment("// loop start");
 					if (s.LoopEntryPoint != null) {
-						output.Write(" (head: ");
+						output.WriteComment(" (head: ");
 						DisassemblerHelpers.WriteOffsetReference(output, s.LoopEntryPoint);
-						output.Write(')');
+						output.WriteComment(")");
 					}
 					output.WriteLine();
 					break;
 				case ILStructureType.Try:
-					output.WriteLine(".try");
+					output.WriteKeyword(".try");
+					output.WriteLine();
 					output.WriteLine("{");
 					break;
 				case ILStructureType.Handler:
 					switch (s.ExceptionHandler.HandlerType) {
 						case ExceptionHandlerType.Catch:
 						case ExceptionHandlerType.Filter:
-							output.Write("catch");
+							output.WriteKeyword("catch");
 							if (s.ExceptionHandler.CatchType != null) {
 								output.Write(' ');
 								s.ExceptionHandler.CatchType.WriteTo(output, ILNameSyntax.TypeName);
@@ -155,10 +160,12 @@ namespace ICSharpCode.Decompiler.Disassembler
 							output.WriteLine();
 							break;
 						case ExceptionHandlerType.Finally:
-							output.WriteLine("finally");
+							output.WriteKeyword("finally");
+							output.WriteLine();
 							break;
 						case ExceptionHandlerType.Fault:
-							output.WriteLine("fault");
+							output.WriteKeyword("fault");
+							output.WriteLine();
 							break;
 						default:
 							throw new NotSupportedException();
@@ -166,7 +173,8 @@ namespace ICSharpCode.Decompiler.Disassembler
 					output.WriteLine("{");
 					break;
 				case ILStructureType.Filter:
-					output.WriteLine("filter");
+					output.WriteKeyword("filter");
+					output.WriteLine();
 					output.WriteLine("{");
 					break;
 				default:
@@ -224,16 +232,19 @@ namespace ICSharpCode.Decompiler.Disassembler
 			output.Unindent();
 			switch (s.Type) {
 				case ILStructureType.Loop:
-					output.WriteLine("// end loop");
+					output.WriteLineComment("// end loop");
 					break;
 				case ILStructureType.Try:
-					output.WriteLine("} // end .try");
+					output.Write("} ");
+					output.WriteLineComment("// end .try");
 					break;
 				case ILStructureType.Handler:
-					output.WriteLine("} // end handler");
+					output.Write("} ");
+					output.WriteLineComment("// end handler");
 					break;
 				case ILStructureType.Filter:
-					output.WriteLine("} // end filter");
+					output.Write("} ");
+					output.WriteLineComment("// end filter");
 					break;
 				default:
 					throw new NotSupportedException();

@@ -55,6 +55,11 @@ namespace ICSharpCode.Decompiler
 			output.Write(text);
 			output.WriteLine();
 		}
+
+		public static void WriteLineComment(this ITextOutput output, string format, params object[] args) {
+			output.WriteComment(string.Format(format, args));
+			output.WriteLine();
+		}
 		
 		public static void WriteLine(this ITextOutput output, string format, params object[] args)
 		{
