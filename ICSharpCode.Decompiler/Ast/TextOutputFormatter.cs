@@ -164,10 +164,22 @@ namespace ICSharpCode.Decompiler.Ast
 		{
 			IMemberRef memberRef = GetCurrentMemberReference();
 			var node = nodeStack.Peek();
-			if (memberRef != null && node is ConstructorInitializer)
+			if (memberRef != null && (node is ConstructorInitializer || node is PrimitiveType))
 				output.WriteReference(keyword, memberRef);
 			else
-				output.Write(keyword);
+				output.WriteKeyword(keyword);
+		}
+
+		static bool HasNoIdentifier(AstNode node)
+		{
+			return 
+				node.GetChildByRole(Roles.Identifier) == Roles.Identifier.NullObject &&
+				node.GetChildByRole(Roles.Parameter) == Roles.Parameter.NullObject &&
+				node.GetChildByRole(Roles.Argument) == Roles.Argument.NullObject &&
+				node.GetChildByRole(Roles.TargetExpression) == Roles.TargetExpression.NullObject &&
+				node.GetChildByRole(Roles.TypeParameter) == Roles.TypeParameter.NullObject &&
+				node.GetChildByRole(Roles.TypeArgument) == Roles.TypeArgument.NullObject &&
+				node.GetChildByRole(Roles.Constraint) == Roles.Constraint.NullObject;
 		}
 		
 		public void WriteToken(string token)
@@ -175,8 +187,12 @@ namespace ICSharpCode.Decompiler.Ast
 			// Attach member reference to token only if there's no identifier in the current node.
 			IMemberRef memberRef = GetCurrentMemberReference();
 			var node = nodeStack.Peek();
-			if (memberRef != null && node.GetChildByRole(Roles.Identifier).IsNull)
+			if (memberRef != null && HasNoIdentifier(node))
 				output.WriteReference(token, memberRef);
+			else if (CSharpOutputVisitor.IsKeyword(token, node))
+				output.WriteKeyword(token);
+			else if (node is PrimitiveExpression)
+				output.WriteLiteral(token);
 			else
 				output.Write(token);
 		}
@@ -231,13 +247,14 @@ namespace ICSharpCode.Decompiler.Ast
 		{
 			switch (commentType) {
 				case CommentType.SingleLine:
-					output.Write("//");
-					output.WriteLine(content);
+					output.WriteComment("//");
+					output.WriteComment(content);
+					output.WriteLine();
 					break;
 				case CommentType.MultiLine:
-					output.Write("/*");
-					output.Write(content);
-					output.Write("*/");
+					output.WriteComment("/*");
+					output.WriteComment(content);
+					output.WriteComment("*/");
 					break;
 				case CommentType.Documentation:
 					bool isLastLine = !(nodeStack.Peek().NextSibling is Comment);
@@ -245,8 +262,8 @@ namespace ICSharpCode.Decompiler.Ast
 						inDocumentationComment = true;
 						output.MarkFoldStart("///" + content, true);
 					}
-					output.Write("///");
-					output.Write(content);
+					output.WriteComment("///");
+					output.WriteComment(content);
 					if (inDocumentationComment && isLastLine) {
 						inDocumentationComment = false;
 						output.MarkFoldEnd();
@@ -262,8 +279,8 @@ namespace ICSharpCode.Decompiler.Ast
 		public void WritePreProcessorDirective(PreProcessorDirectiveType type, string argument)
 		{
 			// pre-processor directive must start on its own line
-			output.Write('#');
-			output.Write(type.ToString().ToLowerInvariant());
+			output.WriteKeyword("#");
+			output.WriteKeyword(type.ToString().ToLowerInvariant());
 			if (!string.IsNullOrEmpty(argument)) {
 				output.Write(' ');
 				output.Write(argument);
@@ -289,7 +306,7 @@ namespace ICSharpCode.Decompiler.Ast
 			nodeStack.Push(node);
 			startLocations.Push(output.Location);
 
-			if (node is EntityDeclaration && node.Annotation<IMemberRef>() != null && node.GetChildByRole(Roles.Identifier).IsNull)
+			if (node is EntityDeclaration && node.Annotation<IMemberRef>() != null && HasNoIdentifier(node))
 				output.WriteDefinition("", node.Annotation<IMemberRef>(), false);
 			
 			MemberMapping mapping = node.Annotation<MemberMapping>();

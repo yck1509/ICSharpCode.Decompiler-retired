@@ -802,11 +802,12 @@ namespace ICSharpCode.Decompiler.Ast
 							Match m = objectInitializerPattern.Match(args[i]);
 							if (m.Success) {
 								MemberReferenceExpression mre = m.Get<MemberReferenceExpression>("left").Single();
-								initializer.Elements.Add(
-									new NamedExpression {
-										Name = mre.MemberName,
-										Expression = m.Get<Expression>("right").Single().Detach()
-									}.CopyAnnotationsFrom(mre));
+								var exp = new NamedExpression {
+									Name = mre.MemberName,
+									Expression = m.Get<Expression>("right").Single().Detach()
+								};
+								exp.NameToken.CopyAnnotationsFrom(mre);
+								initializer.Elements.Add(exp);
 							} else {
 								m = collectionInitializerPattern.Match(args[i]);
 								if (m.Success) {

@@ -106,6 +106,21 @@ namespace ICSharpCode.Decompiler
 		{
 			Write(text);
 		}
+
+		public void WriteKeyword(string text)
+		{
+			Write(text);
+		}
+
+		public void WriteComment(string text)
+		{
+			Write(text);
+		}
+
+		public void WriteLiteral(string text)
+		{
+			Write(text);
+		}
 		
 		void ITextOutput.MarkFoldStart(string collapsedText, bool defaultCollapsed)
 		{

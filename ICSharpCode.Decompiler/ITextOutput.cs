@@ -30,6 +30,9 @@ namespace ICSharpCode.Decompiler
 		void Unindent();
 		void Write(char ch);
 		void Write(string text);
+		void WriteKeyword(string text);
+		void WriteComment(string text);
+		void WriteLiteral(string text);
 		void WriteLine();
 		void WriteDefinition(string text, object definition, bool isLocal = true);
 		void WriteReference(string text, object reference, bool isLocal = false);
