@@ -747,7 +747,7 @@ namespace ICSharpCode.Decompiler.Ast
 						}
 						if (declaringType.IsAnonymousType()) {
 							MethodDef ctor = ((IMethod)operand).ResolveMethodDef();
-							if (methodDef != null) {
+							if (ctor != null) {
 								AnonymousTypeCreateExpression atce = new AnonymousTypeCreateExpression();
 								if (CanInferAnonymousTypePropertyNamesFromArguments(args, ctor.Parameters)) {
 									atce.Initializers.AddRange(args);
