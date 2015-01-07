@@ -1132,6 +1132,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			if (v != null) {
 				output.WriteKeyword(".ver ");
 				output.WriteLiteral(string.Format("{0}:{1}:{2}:{3}", v.Major, v.Minor, v.Build, v.Revision));
+				output.WriteLine();
 			}
 			CloseBlock();
 		}
@@ -1145,6 +1146,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			foreach (var mref in moduleDef.GetModuleRefs()) {
 				output.WriteKeyword(".module extern ");
 				output.Write(DisassemblerHelpers.Escape(mref.Name));
+				output.WriteLine();
 			}
 			foreach (var aref in moduleDef.GetAssemblyRefs()) {
 				output.WriteKeyword(".assembly extern ");
@@ -1161,6 +1163,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 				if (aref.Version != null) {
 					output.WriteKeyword(".ver ");
 					output.WriteLiteral(string.Format("{0}:{1}:{2}:{3}", aref.Version.Major, aref.Version.Minor, aref.Version.Build, aref.Version.Revision));
+					output.WriteLine();
 				}
 				CloseBlock();
 			}

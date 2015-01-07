@@ -176,6 +176,7 @@ namespace ICSharpCode.Decompiler.Ast
 				node.GetChildByRole(Roles.Identifier) == Roles.Identifier.NullObject &&
 				node.GetChildByRole(Roles.Parameter) == Roles.Parameter.NullObject &&
 				node.GetChildByRole(Roles.Argument) == Roles.Argument.NullObject &&
+				node.GetChildByRole(Roles.Type) == Roles.Type.NullObject &&
 				node.GetChildByRole(Roles.TargetExpression) == Roles.TargetExpression.NullObject &&
 				node.GetChildByRole(Roles.TypeParameter) == Roles.TypeParameter.NullObject &&
 				node.GetChildByRole(Roles.TypeArgument) == Roles.TypeArgument.NullObject &&
