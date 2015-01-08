@@ -400,7 +400,7 @@ namespace ICSharpCode.Decompiler.Ast
 						ace.Initializer.Elements.AddRange(args);
 						return ace;
 					}
-					case ILCode.Ldlen: return arg1.Member("Length");
+					case ILCode.Ldlen: return arg1.Member("Length").WithAnnotation(GetArrayLengthRef());
 				case ILCode.Ldelem_I:
 				case ILCode.Ldelem_I1:
 				case ILCode.Ldelem_I2:
@@ -552,7 +552,7 @@ namespace ICSharpCode.Decompiler.Ast
 						goto case ILCode.Castclass;
 				case ILCode.Castclass:
 					if ((byteCode.Arguments[0].InferredType != null && byteCode.Arguments[0].InferredType.IsGenericParameter) || ((ITypeDefOrRef)operand).TryGetGenericSig() != null)
-						return arg1.CastTo(new PrimitiveType("object")).CastTo(operandAsTypeRef);
+						return arg1.CastTo(new PrimitiveType("object").WithAnnotation(context.CurrentModule.CorLibTypes.Object.ToTypeDefOrRef())).CastTo(operandAsTypeRef);
 					else
 						return arg1.CastTo(operandAsTypeRef);
 				case ILCode.Isinst:
@@ -671,25 +671,29 @@ namespace ICSharpCode.Decompiler.Ast
 					case ILCode.Ldstr:  return new PrimitiveExpression(operand);
 				case ILCode.Ldtoken:
 					if (operand is ITypeDefOrRef) {
-						return AstBuilder.CreateTypeOfExpression(((ITypeDefOrRef)operand).ToTypeSig()).Member("TypeHandle");
+						return AstBuilder.CreateTypeOfExpression(((ITypeDefOrRef)operand).ToTypeSig()).Member("TypeHandle").WithAnnotation(GetTypeHandleRef());
 					} else {
 						Expression referencedEntity;
 						string loadName;
 						string handleName;
+						MemberRef memberRef;
 						if (dnlibExtensions.IsField(operand)) {
 							loadName = "fieldof";
 							handleName = "FieldHandle";
+							memberRef = GetFieldHandleRef();
 							IField fr = (IField)operand;
 							referencedEntity = AstBuilder.ConvertType(fr.DeclaringType).Member(fr.Name).WithAnnotation(fr);
-						} else if (dnlibExtensions.IsField(operand)) {
+						} else if (dnlibExtensions.IsMethod(operand)) {
 							loadName = "methodof";
 							handleName = "MethodHandle";
+							memberRef = GetMethodHandleRef();
 							IMethod mr = (IMethod)operand;
 							var methodParameters = mr.MethodSig.Params.Select(p => new TypeReferenceExpression(AstBuilder.ConvertType(p)));
 							referencedEntity = AstBuilder.ConvertType(mr.DeclaringType).Invoke(mr.Name, methodParameters).WithAnnotation(mr);
 						} else {
 							loadName = "ldtoken";
 							handleName = "Handle";
+							memberRef = null;
 							referencedEntity = new IdentifierExpression(FormatByteCodeOperand(byteCode.Operand));
 						}
 						return new IdentifierExpression(loadName).Invoke(referencedEntity).WithAnnotation(new LdTokenAnnotation()).Member(handleName);
@@ -725,7 +729,7 @@ namespace ICSharpCode.Decompiler.Ast
 					return new UndocumentedExpression {
 						UndocumentedExpressionType = UndocumentedExpressionType.RefType,
 						Arguments = { arg1 }
-					}.Member("TypeHandle");
+					}.Member("TypeHandle").WithAnnotation(GetTypeHandleRef());
 				case ILCode.Refanyval:
 					return MakeRef(
 						new UndocumentedExpression {
@@ -856,6 +860,37 @@ namespace ICSharpCode.Decompiler.Ast
 				default:
 					throw new Exception("Unknown OpCode: " + byteCode.Code);
 			}
+		}
+
+		MemberRefUser GetArrayLengthRef() {
+			var array = context.CurrentModule.CorLibTypes.GetTypeRef("System", "Array");
+			return new MemberRefUser(context.CurrentModule, "get_Length",
+				MethodSig.CreateInstance(context.CurrentModule.CorLibTypes.Int32, new ClassSig(array)),
+				array);
+		}
+
+		MemberRefUser GetTypeHandleRef() {
+			var type = context.CurrentModule.CorLibTypes.GetTypeRef("System", "Type");
+			var hnd = context.CurrentModule.CorLibTypes.GetTypeRef("System", "RuntimeTypeHandle");
+			return new MemberRefUser(context.CurrentModule, "get_TypeHandle",
+				MethodSig.CreateInstance(new ValueTypeSig(hnd), new ClassSig(type)),
+				type);
+		}
+
+		MemberRefUser GetMethodHandleRef() {
+			var type = context.CurrentModule.CorLibTypes.GetTypeRef("System.Reflection", "MethodBase");
+			var hnd = context.CurrentModule.CorLibTypes.GetTypeRef("System", "RuntimeMethodHandle");
+			return new MemberRefUser(context.CurrentModule, "get_MethodHandle",
+				MethodSig.CreateInstance(new ValueTypeSig(hnd), new ClassSig(type)),
+				type);
+		}
+
+		MemberRefUser GetFieldHandleRef() {
+			var type = context.CurrentModule.CorLibTypes.GetTypeRef("System.Reflection", "FieldInfo");
+			var hnd = context.CurrentModule.CorLibTypes.GetTypeRef("System", "RuntimeFieldHandle");
+			return new MemberRefUser(context.CurrentModule, "get_FieldHandle",
+				MethodSig.CreateInstance(new ValueTypeSig(hnd), new ClassSig(type)),
+				type);
 		}
 		
 		internal static bool CanInferAnonymousTypePropertyNamesFromArguments(IList<Expression> args, IList<Parameter> parameters)
