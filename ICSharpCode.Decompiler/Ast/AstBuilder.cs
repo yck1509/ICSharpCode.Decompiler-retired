@@ -1172,16 +1172,16 @@ namespace ICSharpCode.Decompiler.Ast
 					break;
 			}
 			LayoutKind defaultLayoutKind = (typeDefinition.IsValueType && !typeDefinition.IsEnum) ? LayoutKind.Sequential: LayoutKind.Auto;
-			if (layoutKind != defaultLayoutKind || charSet != CharSet.Ansi || typeDefinition.PackingSize > 0 || typeDefinition.ClassSize > 0) {
+			if (layoutKind != defaultLayoutKind || charSet != CharSet.Ansi || typeDefinition.HasClassLayout) {
 				var structLayout = CreateNonCustomAttribute(typeof(StructLayoutAttribute));
 				structLayout.Arguments.Add(new IdentifierExpression("LayoutKind").Member(layoutKind.ToString()));
 				if (charSet != CharSet.Ansi) {
 					structLayout.AddNamedArgument("CharSet", new IdentifierExpression("CharSet").Member(charSet.ToString()));
 				}
-				if (typeDefinition.PackingSize > 0) {
+				if (typeDefinition.PackingSize != ushort.MaxValue) {
 					structLayout.AddNamedArgument("Pack", new PrimitiveExpression((int)typeDefinition.PackingSize));
 				}
-				if (typeDefinition.ClassSize > 0) {
+				if (typeDefinition.ClassSize != uint.MaxValue) {
 					structLayout.AddNamedArgument("Size", new PrimitiveExpression((int)typeDefinition.ClassSize));
 				}
 				attributedNode.Attributes.Add(new AttributeSection(structLayout));
