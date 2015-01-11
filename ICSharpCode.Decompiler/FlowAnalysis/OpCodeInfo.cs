@@ -38,12 +38,8 @@ namespace ICSharpCode.Decompiler.FlowAnalysis
 				case FlowControl.Throw:
 				case FlowControl.Return:
 					return true;
-				case FlowControl.Next:
-				case FlowControl.Call:
-				case FlowControl.Cond_Branch:
-					return false;
 				default:
-					throw new NotSupportedException(opcode.FlowControl.ToString());
+					return false;
 			}
 		}
 		

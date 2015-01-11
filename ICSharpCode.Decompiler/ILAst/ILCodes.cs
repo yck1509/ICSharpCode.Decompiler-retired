@@ -400,22 +400,28 @@ namespace ICSharpCode.Decompiler.ILAst
 					return false;
 			}
 		}
+
+		static T Get<T>(this System.Collections.Generic.IList<T> list, int index) where T : class {
+			if (index >= 0 && index < list.Count)
+				return list[index];
+			return null;
+		}
 		
 		public static void ExpandMacro(ref ILCode code, ref object operand, MethodDef method, CilBody body)
 		{
 			switch (code) {
-					case ILCode.__Ldarg_0:   code = ILCode.__Ldarg; operand = method.Parameters[0]; break;
-					case ILCode.__Ldarg_1:   code = ILCode.__Ldarg; operand = method.Parameters[1]; break;
-					case ILCode.__Ldarg_2:   code = ILCode.__Ldarg; operand = method.Parameters[2]; break;
-					case ILCode.__Ldarg_3:   code = ILCode.__Ldarg; operand = method.Parameters[3]; break;
-					case ILCode.__Ldloc_0:   code = ILCode.Ldloc; operand = body.Variables[0]; break;
-					case ILCode.__Ldloc_1:   code = ILCode.Ldloc; operand = body.Variables[1]; break;
-					case ILCode.__Ldloc_2:   code = ILCode.Ldloc; operand = body.Variables[2]; break;
-					case ILCode.__Ldloc_3:   code = ILCode.Ldloc; operand = body.Variables[3]; break;
-					case ILCode.__Stloc_0:   code = ILCode.Stloc; operand = body.Variables[0]; break;
-					case ILCode.__Stloc_1:   code = ILCode.Stloc; operand = body.Variables[1]; break;
-					case ILCode.__Stloc_2:   code = ILCode.Stloc; operand = body.Variables[2]; break;
-					case ILCode.__Stloc_3:   code = ILCode.Stloc; operand = body.Variables[3]; break;
+					case ILCode.__Ldarg_0:   code = ILCode.__Ldarg; operand = method.Parameters.Get(0); break;
+					case ILCode.__Ldarg_1:   code = ILCode.__Ldarg; operand = method.Parameters.Get(1); break;
+					case ILCode.__Ldarg_2:   code = ILCode.__Ldarg; operand = method.Parameters.Get(2); break;
+					case ILCode.__Ldarg_3:   code = ILCode.__Ldarg; operand = method.Parameters.Get(3); break;
+					case ILCode.__Ldloc_0:   code = ILCode.Ldloc; operand = body.Variables.Get(0); break;
+					case ILCode.__Ldloc_1:   code = ILCode.Ldloc; operand = body.Variables.Get(1); break;
+					case ILCode.__Ldloc_2:   code = ILCode.Ldloc; operand = body.Variables.Get(2); break;
+					case ILCode.__Ldloc_3:   code = ILCode.Ldloc; operand = body.Variables.Get(3); break;
+					case ILCode.__Stloc_0:   code = ILCode.Stloc; operand = body.Variables.Get(0); break;
+					case ILCode.__Stloc_1:   code = ILCode.Stloc; operand = body.Variables.Get(1); break;
+					case ILCode.__Stloc_2:   code = ILCode.Stloc; operand = body.Variables.Get(2); break;
+					case ILCode.__Stloc_3:   code = ILCode.Stloc; operand = body.Variables.Get(3); break;
 					case ILCode.__Ldarg_S:   code = ILCode.__Ldarg; break;
 					case ILCode.__Ldarga_S:  code = ILCode.__Ldarga; break;
 					case ILCode.__Starg_S:   code = ILCode.__Starg; break;
