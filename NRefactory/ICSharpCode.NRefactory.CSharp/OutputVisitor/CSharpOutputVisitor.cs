@@ -1151,9 +1151,7 @@ namespace ICSharpCode.NRefactory.CSharp
 				case '\v':
 					return "\\v";
 				default:
-					if (char.IsControl(ch) || char.IsSurrogate(ch) ||
-					// print all uncommon white spaces as numbers
-						(char.IsWhiteSpace(ch) && ch != ' ')) {
+					if (ch < 0x20 || ch >= 0x7f) {
 						return "\\u" + ((int)ch).ToString("x4");
 					} else {
 						return ch.ToString();

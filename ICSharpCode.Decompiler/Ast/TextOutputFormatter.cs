@@ -47,6 +47,8 @@ namespace ICSharpCode.Decompiler.Ast
 		
 		public void WriteIdentifier(string identifier)
 		{
+			identifier = CSharpOutputVisitor.ConvertString(identifier);
+
 			var definition = GetCurrentDefinition();
 			if (definition != null) {
 				output.WriteDefinition(identifier, definition, false);
