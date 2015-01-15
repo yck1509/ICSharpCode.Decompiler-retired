@@ -73,7 +73,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			WriteOffsetReference(writer, exceptionHandler.HandlerEnd);
 		}
 		
-		public static void WriteTo(this Instruction instruction, ITextOutput writer)
+		public static void WriteTo(this Instruction instruction, MethodDef method, CilBody body, ITextOutput writer)
 		{
 			writer.WriteDefinition(dnlibExtensions.OffsetToString(instruction.Offset), instruction, true);
 			writer.Write(": ");
@@ -87,6 +87,29 @@ namespace ICSharpCode.Decompiler.Disassembler
 						writer.WriteKeyword("field ");
 				}
 				WriteOperand(writer, instruction.Operand);
+			}
+			else if (method != null && body != null) {
+				switch (instruction.OpCode.Code) {
+					case Code.Ldloc_0:
+					case Code.Ldloc_1:
+					case Code.Ldloc_2:
+					case Code.Ldloc_3:
+						writer.WriteComment("  // ");
+						var local = instruction.GetLocal(body.Variables);
+						if (local != null)
+							WriteOperand(writer, local);
+						break;
+
+					case Code.Ldarg_0:
+					case Code.Ldarg_1:
+					case Code.Ldarg_2:
+					case Code.Ldarg_3:
+						writer.WriteComment("  // ");
+						var arg = instruction.GetParameter(method.Parameters);
+						if (arg != null)
+							WriteOperand(writer, arg);
+						break;
+				}
 			}
 		}
 		
@@ -392,7 +415,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			Local local = operand as Local;
 			if (local != null) {
 				if (string.IsNullOrEmpty(local.Name))
-					writer.WriteReference(local.Index.ToString(), local, true);
+					writer.WriteReference("[" + local.Index.ToString() + "]", local, true);
 				else
 					writer.WriteReference(Escape(local.Name), local, true);
 				return;
@@ -401,7 +424,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			Parameter param = operand as Parameter;
 			if (param != null) {
 				if (string.IsNullOrEmpty(param.Name))
-					writer.WriteReference(param.Index.ToString(), param, true);
+					writer.WriteReference("[" + param.Index.ToString() + "]", param, true);
 				else
 					writer.WriteReference(Escape(param.Name), param, true);
 				return;
@@ -410,18 +433,21 @@ namespace ICSharpCode.Decompiler.Disassembler
 			IMethod methodRef = operand as IMethod;
 			if (methodRef != null && dnlibExtensions.IsMethod(methodRef)) {
 				methodRef.WriteTo(writer);
+				writer.WriteComment(" // 0x" + methodRef.MDToken.Raw.ToString("x8"));
 				return;
 			}
 			
 			ITypeDefOrRef typeRef = operand as ITypeDefOrRef;
 			if (typeRef != null) {
 				typeRef.WriteTo(writer, ILNameSyntax.TypeName);
+				writer.WriteComment(" // 0x" + typeRef.MDToken.Raw.ToString("x8"));
 				return;
 			}
 
 			IField fieldRef = operand as IField;
 			if (fieldRef != null && dnlibExtensions.IsField(fieldRef)) {
 				fieldRef.WriteTo(writer);
+				writer.WriteComment(" // 0x" + fieldRef.MDToken.Raw.ToString("x8"));
 				return;
 			}
 			
