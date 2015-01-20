@@ -156,10 +156,8 @@ namespace ICSharpCode.Decompiler.Ast
 			var node = nodeStack.Peek();
 			if (node is Identifier)
 				node = node.Parent;
-			if (IsDefinition(node))
-				return node.Annotation<IMemberRef>();
-			
-			return null;
+
+			return GetDefinition(node);
 		}
 		
 		public void WriteKeyword(string keyword)
@@ -355,11 +353,14 @@ namespace ICSharpCode.Decompiler.Ast
 			}
 		}
 		
-		private static bool IsDefinition(AstNode node)
+		private static object GetDefinition(AstNode node)
 		{
-			return node is EntityDeclaration
-				|| (node is VariableInitializer && node.Parent is FieldDeclaration)
-				|| node is FixedVariableInitializer;
+			if (node is EntityDeclaration || node is FixedVariableInitializer)
+				return node.Annotation<IMemberRef>();
+			else if (node is VariableInitializer && node.Parent is FieldDeclaration)
+				return node.Parent.Annotation<IMemberRef>();
+			else
+				return null;
 		}
 	}
 }
