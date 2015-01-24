@@ -211,6 +211,8 @@ namespace ICSharpCode.Decompiler.Disassembler
 				return identifier == ".ctor" || identifier == ".cctor";
 			}
 			for (int i = 1; i < identifier.Length; i++) {
+				if (identifier[i] > 127)
+					return false;
 				if (!(char.IsLetterOrDigit(identifier[i]) || IsValidIdentifierCharacter(identifier[i]) || identifier[i] == '.'))
 					return false;
 			}

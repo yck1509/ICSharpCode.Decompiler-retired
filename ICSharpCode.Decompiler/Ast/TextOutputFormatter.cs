@@ -86,8 +86,7 @@ namespace ICSharpCode.Decompiler.Ast
 		{
 			AstNode node = nodeStack.Peek();
 			IMemberRef memberRef = node.Annotation<IMemberRef>();
-			if ((node.Role == Roles.Type && node.Parent is ObjectCreateExpression) ||
-				(memberRef == null && node.Role == Roles.TargetExpression && (node.Parent is InvocationExpression || node.Parent is ObjectCreateExpression)))
+			if (memberRef == null && node.Role == Roles.TargetExpression && (node.Parent is InvocationExpression || node.Parent is ObjectCreateExpression))
 			{
 				memberRef = node.Parent.Annotation<IMemberRef>();
 			}
