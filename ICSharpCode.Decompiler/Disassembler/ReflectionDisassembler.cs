@@ -709,7 +709,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			output.WriteDefinition(DisassemblerHelpers.Escape(field.Name), field);
 			if ((field.Attributes & FieldAttributes.HasFieldRVA) == FieldAttributes.HasFieldRVA) {
 				output.WriteKeyword(" at ");
-				output.Write("I_{0:x8}", field.RVA);
+				output.Write("I_{0:x8}", (uint)field.RVA);
 			}
 			if (field.HasConstant) {
 				output.Write(" = ");
