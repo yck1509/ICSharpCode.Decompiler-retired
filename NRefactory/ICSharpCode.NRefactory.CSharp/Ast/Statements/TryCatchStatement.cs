@@ -90,6 +90,7 @@ namespace ICSharpCode.NRefactory.CSharp
 	public class CatchClause : AstNode
 	{
 		public static readonly TokenRole CatchKeywordRole = new TokenRole ("catch");
+		public static readonly Role<FilterClause> FilterClauseRole = new Role<FilterClause>("FilterClause", FilterClause.Null);
 
 		#region Null
 		public new static readonly CatchClause Null = new NullCatchClause ();
@@ -210,6 +211,11 @@ namespace ICSharpCode.NRefactory.CSharp
 		public CSharpTokenNode RParToken {
 			get { return GetChildByRole (Roles.RPar); }
 		}
+
+		public FilterClause Filter {
+			get { return GetChildByRole(FilterClauseRole); }
+			set { SetChildByRole(FilterClauseRole, value); }
+		}
 		
 		public BlockStatement Body {
 			get { return GetChildByRole (Roles.Body); }
@@ -234,7 +240,89 @@ namespace ICSharpCode.NRefactory.CSharp
 		protected internal override bool DoMatch(AstNode other, PatternMatching.Match match)
 		{
 			CatchClause o = other as CatchClause;
-			return o != null && this.Type.DoMatch(o.Type, match) && MatchString(this.VariableName, o.VariableName) && this.Body.DoMatch(o.Body, match);
+			return o != null && this.Type.DoMatch(o.Type, match) && MatchString(this.VariableName, o.VariableName) && 
+				   this.Filter.DoMatch(o.Filter, match) && this.Body.DoMatch(o.Body, match);
+		}
+	}
+
+	/// <summary>
+	/// when (expression)
+	/// </summary>
+	public class FilterClause : AstNode {
+		public static readonly TokenRole FilterKeywordRole = new TokenRole("when");
+
+		public FilterClause() {
+		}
+
+		public FilterClause(Expression expression) {
+			Expression = expression;
+		}
+
+		#region Null
+		public new static readonly FilterClause Null = new NullFilterClause();
+
+		sealed class NullFilterClause : FilterClause {
+			public override bool IsNull {
+				get {
+					return true;
+				}
+			}
+
+			public override void AcceptVisitor(IAstVisitor visitor) {
+			}
+
+			public override T AcceptVisitor<T>(IAstVisitor<T> visitor) {
+				return default(T);
+			}
+
+			public override S AcceptVisitor<T, S>(IAstVisitor<T, S> visitor, T data) {
+				return default(S);
+			}
+
+			protected internal override bool DoMatch(AstNode other, PatternMatching.Match match) {
+				return other == null || other.IsNull;
+			}
+		}
+		#endregion
+
+		public override NodeType NodeType {
+			get {
+				return NodeType.Unknown;
+			}
+		}
+
+		public CSharpTokenNode FilterToken {
+			get { return GetChildByRole(FilterKeywordRole); }
+		}
+
+		public CSharpTokenNode LParToken {
+			get { return GetChildByRole(Roles.LPar); }
+		}
+
+		public Expression Expression {
+			get { return GetChildByRole(Roles.Expression); }
+			set { SetChildByRole(Roles.Expression, value); }
+		}
+
+		public CSharpTokenNode RParToken {
+			get { return GetChildByRole(Roles.RPar); }
+		}
+
+		public override void AcceptVisitor(IAstVisitor visitor) {
+			visitor.VisitFilterClause(this);
+		}
+
+		public override T AcceptVisitor<T>(IAstVisitor<T> visitor) {
+			return visitor.VisitFilterClause(this);
+		}
+
+		public override S AcceptVisitor<T, S>(IAstVisitor<T, S> visitor, T data) {
+			return visitor.VisitFilterClause(this, data);
+		}
+
+		protected internal override bool DoMatch(AstNode other, PatternMatching.Match match) {
+			FilterClause o = other as FilterClause;
+			return o != null && this.Expression.DoMatch(o.Expression, match);
 		}
 	}
 }

@@ -104,6 +104,7 @@ namespace ICSharpCode.NRefactory.CSharp
 		void VisitThrowStatement(ThrowStatement throwStatement);
 		void VisitTryCatchStatement(TryCatchStatement tryCatchStatement);
 		void VisitCatchClause(CatchClause catchClause);
+		void VisitFilterClause(FilterClause filterClause);
 		void VisitUncheckedStatement(UncheckedStatement uncheckedStatement);
 		void VisitUnsafeStatement(UnsafeStatement unsafeStatement);
 		void VisitUsingStatement(UsingStatement usingStatement);
@@ -235,6 +236,7 @@ namespace ICSharpCode.NRefactory.CSharp
 		S VisitThrowStatement(ThrowStatement throwStatement);
 		S VisitTryCatchStatement(TryCatchStatement tryCatchStatement);
 		S VisitCatchClause(CatchClause catchClause);
+		S VisitFilterClause(FilterClause filterClause);
 		S VisitUncheckedStatement(UncheckedStatement uncheckedStatement);
 		S VisitUnsafeStatement(UnsafeStatement unsafeStatement);
 		S VisitUsingStatement(UsingStatement usingStatement);
@@ -366,6 +368,7 @@ namespace ICSharpCode.NRefactory.CSharp
 		S VisitThrowStatement(ThrowStatement throwStatement, T data);
 		S VisitTryCatchStatement(TryCatchStatement tryCatchStatement, T data);
 		S VisitCatchClause(CatchClause catchClause, T data);
+		S VisitFilterClause(FilterClause filterClause, T data);
 		S VisitUncheckedStatement(UncheckedStatement uncheckedStatement, T data);
 		S VisitUnsafeStatement(UnsafeStatement unsafeStatement, T data);
 		S VisitUsingStatement(UsingStatement usingStatement, T data);

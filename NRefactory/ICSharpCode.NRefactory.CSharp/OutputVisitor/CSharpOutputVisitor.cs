@@ -1933,8 +1933,26 @@ namespace ICSharpCode.NRefactory.CSharp
 				Space(policy.SpacesWithinCatchParentheses);
 				RPar();
 			}
+			if (!catchClause.Filter.IsNull) {
+				catchClause.Filter.AcceptVisitor(this);
+			}
 			catchClause.Body.AcceptVisitor(this);
 			EndNode(catchClause);
+		}
+		
+		public void VisitFilterClause(FilterClause filterClause)
+		{
+			StartNode(filterClause);
+			WriteKeyword(FilterClause.FilterKeywordRole);
+
+			Space(policy.SpaceBeforeCatchParentheses);
+			LPar();
+			Space(policy.SpacesWithinCatchParentheses);
+			filterClause.Expression.AcceptVisitor(this);
+			Space(policy.SpacesWithinCatchParentheses);
+			RPar();
+
+			EndNode(filterClause);
 		}
 		
 		public void VisitUncheckedStatement(UncheckedStatement uncheckedStatement)

@@ -354,6 +354,11 @@ namespace ICSharpCode.NRefactory.CSharp
 			VisitChildren (catchClause);
 		}
 		
+		public virtual void VisitFilterClause (FilterClause filterClause)
+		{
+			VisitChildren (filterClause);
+		}
+		
 		public virtual void VisitUncheckedStatement (UncheckedStatement uncheckedStatement)
 		{
 			VisitChildren (uncheckedStatement);
@@ -952,6 +957,11 @@ namespace ICSharpCode.NRefactory.CSharp
 			return VisitChildren (catchClause);
 		}
 		
+		public virtual T VisitFilterClause (FilterClause filterClause)
+		{
+			return VisitChildren (filterClause);
+		}
+		
 		public virtual T VisitUncheckedStatement (UncheckedStatement uncheckedStatement)
 		{
 			return VisitChildren (uncheckedStatement);
@@ -1548,6 +1558,11 @@ namespace ICSharpCode.NRefactory.CSharp
 		public virtual S VisitCatchClause (CatchClause catchClause, T data)
 		{
 			return VisitChildren (catchClause, data);
+		}
+		
+		public virtual S VisitFilterClause (FilterClause filterClause, T data)
+		{
+			return VisitChildren (filterClause, data);
 		}
 		
 		public virtual S VisitUncheckedStatement (UncheckedStatement uncheckedStatement, T data)

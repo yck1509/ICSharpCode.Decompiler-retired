@@ -993,6 +993,11 @@ namespace ICSharpCode.NRefactory.CSharp
 			throw new NotSupportedException();
 		}
 		
+		CodeObject IAstVisitor<CodeObject>.VisitFilterClause(FilterClause filterClause)
+		{
+			throw new NotSupportedException();
+		}
+		
 		CodeObject IAstVisitor<CodeObject>.VisitUncheckedStatement(UncheckedStatement uncheckedStatement)
 		{
 			return MakeSnippetStatement(uncheckedStatement);

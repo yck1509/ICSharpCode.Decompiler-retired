@@ -660,6 +660,16 @@ namespace ICSharpCode.NRefactory.CSharp
 				handler (catchClause, data);
 			return VisitChildren (catchClause, data);
 		}
+
+		public event Action<FilterClause, T> FilterClauseVisited;
+	
+		S IAstVisitor<T, S>.VisitFilterClause (FilterClause filterClause, T data)
+		{
+			var handler = FilterClauseVisited;
+			if (handler != null)
+				handler (filterClause, data);
+			return VisitChildren (filterClause, data);
+		}
 		
 		public event Action<UncheckedStatement, T> UncheckedStatementVisited;
 	

@@ -477,6 +477,13 @@ namespace ICSharpCode.NRefactory.CSharp
 		{
 			Visit(EnterCatchClause, LeaveCatchClause, catchClause);
 		}
+
+		public event Action<FilterClause> EnterFilterClause, LeaveFilterClause;
+
+		void IAstVisitor.VisitFilterClause(FilterClause filterClause)
+		{
+			Visit(EnterFilterClause, LeaveFilterClause, filterClause);
+		}
 		
 		public event Action<UncheckedStatement> EnterUncheckedStatement, LeaveUncheckedStatement;
 		

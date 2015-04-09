@@ -2862,6 +2862,14 @@ namespace ICSharpCode.NRefactory.CSharp.Resolver
 			resolver = resolver.PopBlock();
 			return voidResult;
 		}
+		
+		ResolveResult IAstVisitor<ResolveResult>.VisitFilterClause(FilterClause filterClause)
+		{
+			resolver = resolver.PushBlock();
+			Scan(filterClause.Expression);
+			resolver = resolver.PopBlock();
+			return voidResult;
+		}
 		#endregion
 		
 		#region VariableDeclarationStatement
