@@ -102,6 +102,17 @@ namespace ICSharpCode.Decompiler
 			}
 		}
 
+		public static bool IsDelegate(this TypeDef type)
+		{
+			if (type.BaseType != null && type.BaseType.Namespace == "System") {
+				if (type.BaseType.Name == "MulticastDelegate")
+					return true;
+				if (type.BaseType.Name == "Delegate" && type.Name != "MulticastDelegate")
+					return true;
+			}
+			return false;
+		}
+
 		public static bool IsCompilerGenerated(this IHasCustomAttribute provider)
 		{
 			if (provider != null && provider.HasCustomAttributes) {
@@ -306,5 +317,40 @@ namespace ICSharpCode.Decompiler
 		public static bool IsCorLibType(this ITypeDefOrRef type, string @namespace, string name) {
 			return type.DefinitionAssembly.IsCorLib() && type.Namespace == @namespace && type.Name == name;
 		}
+
+		/// <summary>
+		/// checks if the given TypeReference is one of the following types:
+		/// [sbyte, short, int, long, IntPtr]
+		/// </summary>
+		public static bool IsSignedIntegralType(this TypeSig type)
+		{
+			return type.ElementType == ElementType.I1 ||
+				   type.ElementType == ElementType.I2 ||
+				   type.ElementType == ElementType.I4 ||
+				   type.ElementType == ElementType.I8 ||
+				   type.ElementType == ElementType.I;
+		}
+
+		/// <summary>
+		/// checks if the given value is a numeric zero-value.
+		/// NOTE that this only works for types: [sbyte, short, int, long, IntPtr, byte, ushort, uint, ulong, float, double and decimal]
+		/// </summary>
+		public static bool IsZero(this object value)
+		{
+			return value.Equals((sbyte)0) ||
+				   value.Equals((short)0) ||
+				   value.Equals(0) ||
+				   value.Equals(0L) ||
+				   value.Equals(IntPtr.Zero) ||
+				   value.Equals((byte)0) ||
+				   value.Equals((ushort)0) ||
+				   value.Equals(0u) ||
+				   value.Equals(0UL) ||
+				   value.Equals(0.0f) ||
+				   value.Equals(0.0) ||
+				   value.Equals((decimal)0);
+					
+		}
+
 	}
 }

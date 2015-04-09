@@ -158,7 +158,7 @@ namespace ICSharpCode.Decompiler.Ast
 				RunTransformations();
 			
 			syntaxTree.AcceptVisitor(new InsertParenthesesVisitor { InsertParenthesesForReadability = true });
-			var outputFormatter = new TextOutputFormatter(output) { FoldBraces = context.Settings.FoldBraces };
+			var outputFormatter = new TextOutputFormatter(output, context) { FoldBraces = context.Settings.FoldBraces };
 			var formattingPolicy = context.Settings.CSharpFormattingOptions;
 			syntaxTree.AcceptVisitor(new CSharpOutputVisitor(outputFormatter, formattingPolicy));
 		}
@@ -318,11 +318,13 @@ namespace ICSharpCode.Decompiler.Ast
 			if (typeDef.IsEnum) {
 				long expectedEnumMemberValue = 0;
 				bool forcePrintingInitializers = IsFlagsEnum(typeDef);
+				TypeCode baseType = TypeCode.Int32;
 				foreach (FieldDef field in typeDef.Fields) {
 					if (!field.IsStatic) {
 						// the value__ field
 						if (field.FieldType.ElementType != ElementType.I4) {
 							astType.AddChild(ConvertType(field.FieldType), Roles.BaseType);
+							baseType = TypeAnalysis.GetTypeCode(field.FieldType);
 						}
 					} else {
 						EnumMemberDeclaration enumMember = new EnumMemberDeclaration();
@@ -330,7 +332,7 @@ namespace ICSharpCode.Decompiler.Ast
 						enumMember.Name = CleanName(field.Name);
 						long memberValue = (long)CSharpPrimitiveCast.Cast(TypeCode.Int64, field.Constant.Value, false);
 						if (forcePrintingInitializers || memberValue != expectedEnumMemberValue) {
-							enumMember.AddChild(new PrimitiveExpression(field.Constant.Value), EnumMemberDeclaration.InitializerRole);
+							enumMember.AddChild(new PrimitiveExpression(CSharpPrimitiveCast.Cast(baseType, field.Constant.Value, false)), EnumMemberDeclaration.InitializerRole);
 						}
 						expectedEnumMemberValue = memberValue + 1;
 						astType.AddChild(enumMember, Roles.TypeMemberRole);
