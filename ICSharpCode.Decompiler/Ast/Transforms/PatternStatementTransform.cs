@@ -136,6 +136,11 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 		{
 			return TransformTryCatchFinally(tryCatchStatement) ?? base.VisitTryCatchStatement(tryCatchStatement, data);
 		}
+
+		public override AstNode VisitFilterClause(FilterClause clause, object data)
+		{
+			return TransformFilterExpression(clause) ?? base.VisitFilterClause(clause, data);
+		}
 		#endregion
 		
 		/// <summary>
@@ -1085,6 +1090,31 @@ namespace ICSharpCode.Decompiler.Ast.Transforms
 				tryCatch.CatchClauses.MoveTo(tryFinally.CatchClauses);
 			}
 			// Since the tryFinally instance is not changed, we can continue in the visitor as usual, so return null
+			return null;
+		}
+		#endregion
+
+		#region Exception Filter Expression
+		static readonly AstNode expFilterExprPattern = new FilterClause(
+			new NamedNode("lambda",
+				new LambdaExpression() {
+					Body = new BlockStatement {
+						new ReturnStatement(new NamedNode("expr", new AnyNode()))
+					}
+				}
+			)
+		);
+
+		public FilterClause TransformFilterExpression(FilterClause clause) {
+			Match m = expFilterExprPattern.Match(clause);
+			if (m.Success) {
+				var lambda = m.Get<LambdaExpression>("lambda").Single();
+				var expr = m.Get<Expression>("expr").Single();
+				if (lambda.Annotation<FilterClauseAnnotation>() != null) {
+					clause.Expression = expr;
+					return clause;
+				}
+			}
 			return null;
 		}
 		#endregion

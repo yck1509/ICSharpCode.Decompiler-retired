@@ -134,16 +134,42 @@ namespace ICSharpCode.Decompiler.ILAst
 		public class CatchBlock: ILBlock
 		{
 			public ITypeDefOrRef ExceptionType;
+			public FilterBlock FilterBlock;
 			public ILVariable ExceptionVariable;
 			
 			public override void WriteTo(ITextOutput output)
 			{
-				output.Write("catch ");
-				output.WriteReference(ExceptionType.FullName, ExceptionType);
-				if (ExceptionVariable != null) {
-					output.Write(' ');
+				if (FilterBlock != null) {
+					FilterBlock.WriteTo(output);
+				}
+
+				if (ExceptionType != null) {
+					output.Write("catch ");
+					output.WriteReference(ExceptionType.FullName, ExceptionType);
+					if (ExceptionVariable != null) {
+						output.Write(' ');
+						output.Write(ExceptionVariable.Name);
+					}
+				}
+				else {
+					output.Write("handler ");
 					output.Write(ExceptionVariable.Name);
 				}
+				output.WriteLine(" {");
+				output.Indent();
+				base.WriteTo(output);
+				output.Unindent();
+				output.WriteLine("}");
+			}
+		}
+
+		public class FilterBlock: ILBlock
+		{
+			public CatchBlock CatchBlock;
+
+			public override void WriteTo(ITextOutput output)
+			{
+				output.Write("filter ");
 				output.WriteLine(" {");
 				output.Indent();
 				base.WriteTo(output);
@@ -163,6 +189,9 @@ namespace ICSharpCode.Decompiler.ILAst
 				yield return this.TryBlock;
 			foreach (var catchBlock in this.CatchBlocks) {
 				yield return catchBlock;
+				if (catchBlock.FilterBlock != null) {
+					yield return catchBlock.FilterBlock;
+				}
 			}
 			if (this.FaultBlock != null)
 				yield return this.FaultBlock;

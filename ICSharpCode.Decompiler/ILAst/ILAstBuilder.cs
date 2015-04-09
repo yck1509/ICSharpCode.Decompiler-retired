@@ -281,13 +281,16 @@ namespace ICSharpCode.Decompiler.ILAst
 					handlerStart.VariablesBefore = VariableSlot.MakeUknownState(varCount);
 					if (ex.HandlerType == ExceptionHandlerType.Catch || ex.HandlerType == ExceptionHandlerType.Filter) {
 						// Catch and Filter handlers start with the exeption on the stack
-						ByteCode ldexception = new ByteCode() {
-							Code = ILCode.Ldexception,
-							Operand = ex.CatchType,
-							PopCount = 0,
-							PushCount = 1
-						};
-						ldexceptions[ex] = ldexception;
+						ByteCode ldexception;
+						if (!ldexceptions.TryGetValue(ex, out ldexception)) {
+							ldexception = new ByteCode() {
+								Code = ILCode.Ldexception,
+								Operand = ex.CatchType,
+								PopCount = 0,
+								PushCount = 1
+							};
+							ldexceptions[ex] = ldexception;
+						}
 						handlerStart.StackBefore = new StackSlot[] { new StackSlot(new [] { ldexception }, null) };
 					}
 					agenda.Push(handlerStart);
@@ -295,13 +298,16 @@ namespace ICSharpCode.Decompiler.ILAst
 					if (ex.HandlerType == ExceptionHandlerType.Filter)
 					{
 						ByteCode filterStart = instrToByteCode[ex.FilterStart];
-						ByteCode ldexception = new ByteCode() {
-							Code = ILCode.Ldexception,
-							Operand = ex.CatchType,
-							PopCount = 0,
-							PushCount = 1
-						};
-						// TODO: ldexceptions[ex] = ldexception;
+						ByteCode ldexception;
+						if (!ldexceptions.TryGetValue(ex, out ldexception)) {
+							ldexception = new ByteCode() {
+								Code = ILCode.Ldexception,
+								Operand = ex.CatchType,
+								PopCount = 0,
+								PushCount = 1
+							};
+							ldexceptions[ex] = ldexception;
+						}
 						filterStart.StackBefore = new StackSlot[] { new StackSlot(new [] { ldexception }, null) };
 						filterStart.VariablesBefore = VariableSlot.MakeUknownState(varCount);
 						agenda.Push(filterStart);
@@ -685,40 +691,37 @@ namespace ICSharpCode.Decompiler.ILAst
 						};
 						// Handle the automatically pushed exception on the stack
 						ByteCode ldexception = ldexceptions[eh];
-						if (ldexception.StoreTo == null || ldexception.StoreTo.Count == 0) {
-							// Exception is not used
-							catchBlock.ExceptionVariable = null;
-						} else if (ldexception.StoreTo.Count == 1) {
-							ILExpression first = catchBlock.Body[0] as ILExpression;
-							if (first != null &&
-							    first.Code == ILCode.Pop &&
-							    first.Arguments[0].Code == ILCode.Ldloc &&
-							    first.Arguments[0].Operand == ldexception.StoreTo[0])
-							{
-								// The exception is just poped - optimize it all away;
-								if (context.Settings.AlwaysGenerateExceptionVariableForCatchBlocks)
-									catchBlock.ExceptionVariable = new ILVariable() { Name = "ex_" + eh.HandlerStart.Offset.ToString("X2"), IsGenerated = true };
-								else
-									catchBlock.ExceptionVariable = null;
-								catchBlock.Body.RemoveAt(0);
-							} else {
-								catchBlock.ExceptionVariable = ldexception.StoreTo[0];
-							}
-						} else {
-							ILVariable exTemp = new ILVariable() { Name = "ex_" + eh.HandlerStart.Offset.ToString("X2"), IsGenerated = true };
-							catchBlock.ExceptionVariable = exTemp;
-							foreach(ILVariable storeTo in ldexception.StoreTo) {
-								catchBlock.Body.Insert(0, new ILExpression(ILCode.Stloc, storeTo, new ILExpression(ILCode.Ldloc, exTemp)));
-							}
-						}
+						ConvertExceptionVariable(eh, catchBlock, ldexception);
 						tryCatchBlock.CatchBlocks.Add(catchBlock);
 					} else if (eh.HandlerType == ExceptionHandlerType.Finally) {
 						tryCatchBlock.FinallyBlock = new ILBlock(handlerAst);
 					} else if (eh.HandlerType == ExceptionHandlerType.Fault) {
 						tryCatchBlock.FaultBlock = new ILBlock(handlerAst);
-					} else {
-						// TODO: ExceptionHandlerType.Filter
-					}
+					} else if (eh.HandlerType == ExceptionHandlerType.Filter) {
+						ILTryCatchBlock.CatchBlock catchBlock = new ILTryCatchBlock.CatchBlock() {
+							ExceptionType = eh.CatchType,
+							Body = handlerAst
+						};
+						
+						// Extract the filter part
+						startIdx = 0;
+						while (startIdx < body.Count && body[startIdx].Offset < eh.FilterStart.Offset) startIdx++;
+						endIdx = 0;
+						while (endIdx < body.Count && body[endIdx].Offset < eh.HandlerStart.Offset) endIdx++;
+						
+						List<ILNode> filterAst = ConvertToAst(body.CutRange(startIdx, endIdx - startIdx));
+						var filterBlock = new ILTryCatchBlock.FilterBlock() { 
+							CatchBlock = catchBlock,
+							Body = filterAst
+						};
+						catchBlock.FilterBlock = filterBlock;
+
+						// Handle the automatically pushed exception on the stack
+						ByteCode ldexception = ldexceptions[eh];
+						ConvertExceptionVariable(eh, catchBlock, ldexception);
+
+						tryCatchBlock.CatchBlocks.Add(catchBlock);
+ 					}
 				}
 				
 				ehs.ExceptWith(handlers);
@@ -782,6 +785,36 @@ namespace ICSharpCode.Decompiler.ILAst
 			}
 			
 			return ast;
+		}
+		
+		private void ConvertExceptionVariable(ExceptionHandler eh, ILTryCatchBlock.CatchBlock catchBlock, ByteCode ldexception)
+		{
+			if (ldexception.StoreTo == null || ldexception.StoreTo.Count == 0) {
+				// Exception is not used
+				catchBlock.ExceptionVariable = null;
+			} else if (ldexception.StoreTo.Count == 1 || (catchBlock.FilterBlock != null && ldexception.StoreTo.Count == 2)) {
+				ILExpression first = catchBlock.Body[0] as ILExpression;
+				if (first != null &&
+					first.Code == ILCode.Pop &&
+					first.Arguments[0].Code == ILCode.Ldloc &&
+					first.Arguments[0].Operand == ldexception.StoreTo[0])
+				{
+					// The exception is just poped - optimize it all away;
+					if (context.Settings.AlwaysGenerateExceptionVariableForCatchBlocks || catchBlock.FilterBlock != null)
+						catchBlock.ExceptionVariable = new ILVariable() { Name = "ex_" + eh.HandlerStart.Offset.ToString("X2"), IsGenerated = true };
+					else
+						catchBlock.ExceptionVariable = null;
+					catchBlock.Body.RemoveAt(0);
+				} else {
+					catchBlock.ExceptionVariable = ldexception.StoreTo[0];
+				}
+			} else {
+				ILVariable exTemp = new ILVariable() { Name = "ex_" + eh.HandlerStart.Offset.ToString("X2"), IsGenerated = true };
+				catchBlock.ExceptionVariable = exTemp;
+				foreach(ILVariable storeTo in ldexception.StoreTo) {
+					catchBlock.Body.Insert(0, new ILExpression(ILCode.Stloc, storeTo, new ILExpression(ILCode.Ldloc, exTemp)));
+				}
+			}
 		}
 	}
 	

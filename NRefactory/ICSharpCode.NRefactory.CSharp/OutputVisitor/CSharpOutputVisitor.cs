@@ -1943,6 +1943,7 @@ namespace ICSharpCode.NRefactory.CSharp
 		public void VisitFilterClause(FilterClause filterClause)
 		{
 			StartNode(filterClause);
+			Space(policy.SpaceBeforeCatchParentheses);
 			WriteKeyword(FilterClause.FilterKeywordRole);
 
 			Space(policy.SpaceBeforeCatchParentheses);

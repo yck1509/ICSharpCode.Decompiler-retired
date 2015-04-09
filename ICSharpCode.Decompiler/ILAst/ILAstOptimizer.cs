@@ -34,6 +34,7 @@ namespace ICSharpCode.Decompiler.ILAst
 		ReduceBranchInstructionSet,
 		InlineVariables,
 		CopyPropagation,
+		FilterExceptionType,
 		YieldReturn,
 		AsyncAwait,
 		PropertyAccessInstructions,
@@ -106,6 +107,9 @@ namespace ICSharpCode.Decompiler.ILAst
 			
 			if (abortBeforeStep == ILAstOptimizationStep.CopyPropagation) return;
 			inlining1.CopyPropagation();
+
+			if (abortBeforeStep == ILAstOptimizationStep.FilterExceptionType) return;
+			FilterExceptionType(method);
 			
 			if (abortBeforeStep == ILAstOptimizationStep.YieldReturn) return;
 			YieldReturnDecompiler.Run(context, method);
@@ -646,6 +650,66 @@ namespace ICSharpCode.Decompiler.ILAst
 			foreach(ILNode child in node.GetChildren()) {
 				if (child != null && !(child is ILExpression))
 					ReduceIfNesting(child);
+			}
+		}
+
+		void FilterExceptionType(ILBlock method) {
+			foreach (var filter in method.GetSelfAndChildrenRecursive<ILTryCatchBlock.FilterBlock>()) {
+				ITypeDefOrRef exType;
+				ILVariable exVar;
+				ILVariable exTemp;
+				ILExpression isinst;
+				ILLabel exitLbl;
+
+				// exTemp = isinst([mscorlib]System.Exception, exVar)
+				if (filter.Body.Count > 8 &&
+					filter.Body[0].Match(ILCode.Stloc, out exTemp, out isinst)) {
+					
+					ILExpression v1, v2;
+					if (!isinst.Match(ILCode.Isinst, out exType, out v1) || !v1.Match(ILCode.Ldloc, out exVar))
+						continue;
+
+					// brtrue(next, exTemp)
+					ILLabel next;
+					if (!filter.Body[1].Match(ILCode.Brtrue, out next, out v2) || !v2.MatchLdloc(exTemp))
+						continue;
+
+					// retVar = ldc.i4(0)
+					ILVariable retVar;
+					ILExpression lit;
+					if (!filter.Body[2].Match(ILCode.Stloc, out retVar, out lit) || !lit.MatchLdcI4(0))
+						continue;
+
+					// br(exitLbl)
+					// next:
+					if (!filter.Body[3].Match(ILCode.Br, out exitLbl) || filter.Body[4] != next)
+						continue;
+
+					// stloc(trueExVar, exprTmp)
+					ILVariable trueExVar;
+					ILExpression exprTmp;
+					if (!filter.Body[5].Match(ILCode.Stloc, out trueExVar, out exprTmp) ||
+						!exprTmp.MatchLdloc(exTemp) || trueExVar.OriginalVariable == null)
+						continue;
+
+					// exitLbl:
+					var index = filter.Body.IndexOf(exitLbl);
+					if (index < 0 || index + 1 >= filter.Body.Count)
+						continue;
+
+					// endfilter(retVar)
+					ILExpression retExpr;
+					if (!filter.Body[index + 1].Match(ILCode.Endfilter, out retExpr) || !retExpr.MatchLdloc(retVar))
+						continue;
+
+					filter.Body.RemoveRange(0, 6);
+
+					filter.CatchBlock.ExceptionType = exType;
+					filter.CatchBlock.ExceptionVariable.Type = exType.ToTypeSig();
+					trueExVar.IsGenerated = true;
+
+					ReplaceVariables(filter, var => (var == trueExVar) ? exVar : var);
+				}
 			}
 		}
 		

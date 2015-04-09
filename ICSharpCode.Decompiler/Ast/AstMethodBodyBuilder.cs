@@ -200,18 +200,22 @@ namespace ICSharpCode.Decompiler.Ast
 				var tryCatchStmt = new TryCatchStatement();
 				tryCatchStmt.TryBlock = TransformBlock(tryCatchNode.TryBlock);
 				foreach (var catchClause in tryCatchNode.CatchBlocks) {
-					if (catchClause.ExceptionVariable == null
-					    && (catchClause.ExceptionType == null || catchClause.ExceptionType.IsCorLibType("System", "Object")))
+					CatchClause clause = new CatchClause { Body = TransformBlock(catchClause) };
+					if (catchClause.ExceptionVariable != null
+					    || (catchClause.ExceptionType != null && !catchClause.ExceptionType.IsCorLibType("System", "Object")))
 					{
-						tryCatchStmt.CatchClauses.Add(new CatchClause { Body = TransformBlock(catchClause) });
-					} else {
-						tryCatchStmt.CatchClauses.Add(
-							new CatchClause {
-								Type = AstBuilder.ConvertType(catchClause.ExceptionType),
-								VariableName = catchClause.ExceptionVariable == null ? null : catchClause.ExceptionVariable.Name,
-								Body = TransformBlock(catchClause)
-							}.WithAnnotation(catchClause.ExceptionVariable));
+						clause.Type = AstBuilder.ConvertType(catchClause.ExceptionType);
+						clause.VariableName = catchClause.ExceptionVariable == null ? null : catchClause.ExceptionVariable.Name;
+						clause.AddAnnotation(catchClause.ExceptionVariable);
 					}
+					if (catchClause.FilterBlock != null) {
+						clause.Filter = new FilterClause { 
+							Expression = new LambdaExpression { 
+								Body = TransformBlock(catchClause.FilterBlock) 
+							}.WithAnnotation(new FilterClauseAnnotation())
+						};
+					}
+					tryCatchStmt.CatchClauses.Add(clause);
 				}
 				if (tryCatchNode.FinallyBlock != null)
 					tryCatchStmt.FinallyBlock = TransformBlock(tryCatchNode.FinallyBlock);
@@ -618,7 +622,8 @@ namespace ICSharpCode.Decompiler.Ast
 					case ILCode.Cpblk:       return InlineAssembly(byteCode, args);
 					case ILCode.Cpobj:       return InlineAssembly(byteCode, args);
 					case ILCode.Dup:         return arg1;
-					case ILCode.Endfilter:   return InlineAssembly(byteCode, args);
+					case ILCode.Endfilter:
+						return new ReturnStatement { Expression = arg1 };
 					case ILCode.Endfinally:  return null;
 					case ILCode.Initblk:     return InlineAssembly(byteCode, args);
 					case ILCode.Initobj:      return InlineAssembly(byteCode, args);

@@ -18,8 +18,10 @@ namespace ICSharpCode.Decompiler.Ast
 			this.ExpectedType = expectedType;
 		}
 	}
-	
+
 	public class LdTokenAnnotation {}
+
+	public class FilterClauseAnnotation { }
 	
 	/// <summary>
 	/// Annotation that is applied to the body expression of an Expression.Lambda() call.
